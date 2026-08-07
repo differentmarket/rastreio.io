@@ -21,6 +21,15 @@ export async function GET(req: NextRequest) {
         DELAY_POSTADO_EM_TRANSITO: '2',
         DELAY_EM_TRANSITO_SAIU_ENTREGA: '3',
         DELAY_SAIU_ENTREGA_ENTREGUE: '1',
+        EMPRESA_NOME: 'Minha Empresa Ltda',
+        EMPRESA_CNPJ: '00.000.000/0001-00',
+        EMPRESA_ENDERECO: 'Rua Principal, 100',
+        EMPRESA_CIDADE: 'São Paulo',
+        EMPRESA_ESTADO: 'SP',
+        EMPRESA_CEP: '01000-000',
+        RESEND_API_KEY: 're_mock_key_value_456',
+        RESEND_FROM_EMAIL: 'Rastreio <noreply@seudominio.com>',
+        NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
       });
     }
 
@@ -37,9 +46,18 @@ export async function GET(req: NextRequest) {
       SHOPIFY_STORE_DOMAIN: '',
       SHOPIFY_ADMIN_TOKEN: '',
       SHOPIFY_WEBHOOK_SECRET: '',
-      DELAY_POSTADO_EM_TRANSITO: '2', // valor padrão
-      DELAY_EM_TRANSITO_SAIU_ENTREGA: '3', // valor padrão
-      DELAY_SAIU_ENTREGA_ENTREGUE: '1', // valor padrão
+      DELAY_POSTADO_EM_TRANSITO: '2',
+      DELAY_EM_TRANSITO_SAIU_ENTREGA: '3',
+      DELAY_SAIU_ENTREGA_ENTREGUE: '1',
+      EMPRESA_NOME: '',
+      EMPRESA_CNPJ: '',
+      EMPRESA_ENDERECO: '',
+      EMPRESA_CIDADE: '',
+      EMPRESA_ESTADO: '',
+      EMPRESA_CEP: '',
+      RESEND_API_KEY: '',
+      RESEND_FROM_EMAIL: '',
+      NEXT_PUBLIC_APP_URL: '',
     };
 
     settings?.forEach((item) => {
@@ -68,7 +86,16 @@ export async function POST(req: NextRequest) {
       SHOPIFY_WEBHOOK_SECRET,
       DELAY_POSTADO_EM_TRANSITO,
       DELAY_EM_TRANSITO_SAIU_ENTREGA,
-      DELAY_SAIU_ENTREGA_ENTREGUE
+      DELAY_SAIU_ENTREGA_ENTREGUE,
+      EMPRESA_NOME,
+      EMPRESA_CNPJ,
+      EMPRESA_ENDERECO,
+      EMPRESA_CIDADE,
+      EMPRESA_ESTADO,
+      EMPRESA_CEP,
+      RESEND_API_KEY,
+      RESEND_FROM_EMAIL,
+      NEXT_PUBLIC_APP_URL,
     } = body;
 
     // Bypass mock em ambiente local (apenas simula sucesso)
@@ -84,6 +111,15 @@ export async function POST(req: NextRequest) {
       { key: 'DELAY_POSTADO_EM_TRANSITO', value: String(DELAY_POSTADO_EM_TRANSITO ?? '2') },
       { key: 'DELAY_EM_TRANSITO_SAIU_ENTREGA', value: String(DELAY_EM_TRANSITO_SAIU_ENTREGA ?? '3') },
       { key: 'DELAY_SAIU_ENTREGA_ENTREGUE', value: String(DELAY_SAIU_ENTREGA_ENTREGUE ?? '1') },
+      { key: 'EMPRESA_NOME', value: EMPRESA_NOME || '' },
+      { key: 'EMPRESA_CNPJ', value: EMPRESA_CNPJ || '' },
+      { key: 'EMPRESA_ENDERECO', value: EMPRESA_ENDERECO || '' },
+      { key: 'EMPRESA_CIDADE', value: EMPRESA_CIDADE || '' },
+      { key: 'EMPRESA_ESTADO', value: EMPRESA_ESTADO || '' },
+      { key: 'EMPRESA_CEP', value: EMPRESA_CEP || '' },
+      { key: 'RESEND_API_KEY', value: RESEND_API_KEY || '' },
+      { key: 'RESEND_FROM_EMAIL', value: RESEND_FROM_EMAIL || '' },
+      { key: 'NEXT_PUBLIC_APP_URL', value: NEXT_PUBLIC_APP_URL || '' },
     ];
 
     for (const item of updates) {

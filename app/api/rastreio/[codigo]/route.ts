@@ -139,6 +139,28 @@ export async function GET(
         });
       }
 
+      // 1.1 Atualização extra no mesmo dia da postagem (ou 0.5 dia depois)
+      const postadoExtraDate = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + 0.5 * 24 * 60 * 60 * 1000));
+      if (daysDiff >= 0.5 && postadoExtraDate.getTime() <= Date.now()) {
+        simulatedHistory.push({
+          status: 'postado',
+          data: postadoExtraDate.toISOString(),
+          descricao: 'Objeto preparado e etiquetado para envio.',
+          local: 'Central de Logística, São Paulo - SP'
+        });
+      }
+
+      // 1.2 Encaminhado para tratamento (1 dia depois da criação)
+      const postadoEncaminhadoDate = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + 1.0 * 24 * 60 * 60 * 1000));
+      if (daysDiff >= 1.0 && postadoEncaminhadoDate.getTime() <= Date.now()) {
+        simulatedHistory.push({
+          status: 'postado',
+          data: postadoEncaminhadoDate.toISOString(),
+          descricao: 'Objeto recebido na unidade de tratamento de origem.',
+          local: 'Agência dos Correios, São Paulo - SP'
+        });
+      }
+
       // 2. Em Trânsito
       const transitoDate = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + delayPostado * 24 * 60 * 60 * 1000));
       if (daysDiff >= delayPostado && transitoDate.getTime() <= Date.now()) {
@@ -149,6 +171,28 @@ export async function GET(
           local: 'Unidade de Tratamento, Curitiba - PR'
         });
         status = 'em_transito';
+      }
+
+      // 2.1 Em Trânsito - Segunda atualização no mesmo dia de trânsito (0.5 dia após a chegada na unidade de tratamento)
+      const transitoChegadaDate = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + (delayPostado + 0.5) * 24 * 60 * 60 * 1000));
+      if (daysDiff >= (delayPostado + 0.5) && transitoChegadaDate.getTime() <= Date.now()) {
+        simulatedHistory.push({
+          status: 'em_transito',
+          data: transitoChegadaDate.toISOString(),
+          descricao: 'Objeto recebido na Unidade de Tratamento de destino.',
+          local: 'Unidade de Tratamento, Curitiba - PR'
+        });
+      }
+
+      // 2.2 Em Trânsito - Encaminhado para a unidade de distribuição local (1.5 dias após entrar em trânsito)
+      const transitoLocalDate = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + (delayPostado + 1.5) * 24 * 60 * 60 * 1000));
+      if (daysDiff >= (delayPostado + 1.5) && transitoLocalDate.getTime() <= Date.now()) {
+        simulatedHistory.push({
+          status: 'em_transito',
+          data: transitoLocalDate.toISOString(),
+          descricao: 'Objeto encaminhado para Unidade de Distribuição',
+          local: 'CDD Centro, Curitiba - PR'
+        });
       }
 
       // 3. Saiu para Entrega

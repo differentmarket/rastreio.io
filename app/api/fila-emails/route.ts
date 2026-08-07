@@ -1,0 +1,138 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { checkAdminAuth } from '@/lib/authHelper';
+
+export const dynamic = 'force-dynamic';
+
+export async function GET(req: NextRequest) {
+  try {
+    const isAdmin = await checkAdminAuth(req);
+    if (!isAdmin) {
+      return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+    }
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+
+    // Modo mock
+    if (supabaseUrl.includes('mock-project')) {
+      const now = Date.now();
+      const mockQueue = [
+        {
+          id: 'mock-order-1',
+          numero_pedido: '1001',
+          created_at: new Date(now - 5 * 24 * 60 * 60 * 1000).toISOString(),
+          status_pedido: 'entregue',
+          customers: { nome: 'Carlos Silva', email: 'carlos.silva@example.com' },
+          trackings: {
+            codigo_rastreio: 'BR2607X8F3K9',
+            status: 'entregue',
+            email_enviado: true,
+            email_enviado_em: new Date(now - 4 * 24 * 60 * 60 * 1000).toISOString(),
+            shopify_synced: true,
+          },
+        },
+        {
+          id: 'mock-order-2',
+          numero_pedido: '1002',
+          created_at: new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString(),
+          status_pedido: 'pago',
+          customers: { nome: 'Maria Souza', email: 'maria.souza@example.com' },
+          trackings: {
+            codigo_rastreio: 'BR2607A3F9K1',
+            status: 'em_transito',
+            email_enviado: false,
+            email_enviado_em: null,
+            shopify_synced: false,
+          },
+        },
+        {
+          id: 'mock-order-3',
+          numero_pedido: '1003',
+          created_at: new Date(now - 12 * 60 * 60 * 1000).toISOString(),
+          status_pedido: 'pendente',
+          customers: { nome: 'João Pereira', email: 'joao.pereira@example.com' },
+          trackings: {
+            codigo_rastreio: 'BR2607T4Y7P2',
+            status: 'postado',
+            email_enviado: false,
+            email_enviado_em: null,
+            shopify_synced: false,
+          },
+        },
+        {
+          id: 'mock-shopify-5001',
+          numero_pedido: '5001',
+          created_at: new Date(now - 1 * 24 * 60 * 60 * 1000).toISOString(),
+          status_pedido: 'pago',
+          customers: { nome: 'Ana Lima', email: 'ana.lima@example.com' },
+          trackings: {
+            codigo_rastreio: 'BR0000005001SP',
+            status: 'postado',
+            email_enviado: false,
+            email_enviado_em: null,
+            shopify_synced: false,
+          },
+        },
+        {
+          id: 'mock-shopify-5002',
+          numero_pedido: '5002',
+          created_at: new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString(),
+          status_pedido: 'pago',
+          customers: { nome: 'Bruno Carvalho', email: 'bruno.carvalho@example.com' },
+          trackings: {
+            codigo_rastreio: 'BR0000005002SP',
+            status: 'postado',
+            email_enviado: false,
+            email_enviado_em: null,
+            shopify_synced: false,
+          },
+        },
+        {
+          id: 'mock-shopify-5004',
+          numero_pedido: '5004',
+          created_at: new Date(now - 5 * 24 * 60 * 60 * 1000).toISOString(),
+          status_pedido: 'enviado',
+          customers: { nome: 'Diego Fonseca', email: 'diego.fonseca@example.com' },
+          trackings: {
+            codigo_rastreio: 'BR0000005004SP',
+            status: 'entregue',
+            email_enviado: true,
+            email_enviado_em: new Date(now - 4 * 24 * 60 * 60 * 1000).toISOString(),
+            shopify_synced: true,
+          },
+        },
+      ];
+
+      return NextResponse.json(mockQueue);
+    }
+
+    // Produção
+    const { data: orders, error } = await supabaseAdmin
+      .from('orders')
+      .select(`
+        id,
+        numero_pedido,
+        status_pedido,
+        created_at,
+        customers ( nome, email ),
+        trackings ( codigo_rastreio, status, email_enviado, email_enviado_em, shopify_synced )
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao buscar fila de e-mails:', error);
+      return NextResponse.json({ error: 'Erro ao buscar dados.' }, { status: 500 });
+    }
+
+    const formatted = (orders || []).map((o: any) => ({
+      ...o,
+      customers: Array.isArray(o.customers) ? o.customers[0] : o.customers,
+      trackings: Array.isArray(o.trackings) ? o.trackings[0] : o.trackings,
+    }));
+
+    return NextResponse.json(formatted);
+  } catch (err: any) {
+    console.error('Erro na rota da fila de e-mails:', err);
+    return NextResponse.json({ error: err.message || 'Erro interno.' }, { status: 500 });
+  }
+}
