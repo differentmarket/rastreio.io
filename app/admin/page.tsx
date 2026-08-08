@@ -176,12 +176,16 @@ export default function AdminPage() {
   }, [session, activeTab]);
 
   // ── Fetch ──
-  const getToken = () => session?.access_token;
+  const getAuthHeaders = (): Record<string, string> => {
+    const token = session?.access_token;
+    if (!token) return {};
+    return { Authorization: `Bearer ${token}` };
+  };
 
   const fetchOrders = async () => {
     setLoadingOrders(true);
     try {
-      const res = await fetch('/api/pedidos', { headers: { Authorization: `Bearer ${getToken()}` } });
+      const res = await fetch('/api/pedidos', { headers: getAuthHeaders() });
       if (!res.ok) throw new Error();
       setOrders(await res.json());
     } catch { /* silent */ } finally {
@@ -196,7 +200,7 @@ export default function AdminPage() {
     setEmailError(null);
     setShopifyFulfilled(null);
     try {
-      const res = await fetch(`/api/pedidos/${orderId}`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      const res = await fetch(`/api/pedidos/${orderId}`, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error();
       const data = await res.json();
       setSelectedOrder(data);
@@ -210,7 +214,7 @@ export default function AdminPage() {
   const fetchEmailQueue = async () => {
     setLoadingQueue(true);
     try {
-      const res = await fetch('/api/fila-emails', { headers: { Authorization: `Bearer ${getToken()}` } });
+      const res = await fetch('/api/fila-emails', { headers: getAuthHeaders() });
       if (!res.ok) throw new Error();
       setEmailQueue(await res.json());
     } catch { /* silent */ } finally {
@@ -221,7 +225,7 @@ export default function AdminPage() {
   const fetchSettings = async () => {
     setLoadingSettings(true);
     try {
-      const res = await fetch('/api/settings', { headers: { Authorization: `Bearer ${getToken()}` } });
+      const res = await fetch('/api/settings', { headers: getAuthHeaders() });
       if (!res.ok) throw new Error();
       const data = await res.json();
       setShopifyDomain(data.SHOPIFY_STORE_DOMAIN || '');
@@ -251,11 +255,16 @@ export default function AdminPage() {
     e.preventDefault();
     setLoginError(null);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const cleanEmail = email.trim();
+      const cleanPassword = password.trim();
+      const { error } = await supabase.auth.signInWithPassword({ 
+        email: cleanEmail, 
+        password: cleanPassword 
+      });
       if (error) {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
         if (supabaseUrl.includes('mock-project')) {
-          setSession({ user: { email: email || 'admin@teste.com' }, access_token: 'mock-session-token' });
+          setSession({ user: { email: cleanEmail || 'admin@teste.com' }, access_token: 'mock-session-token' });
           return;
         }
         throw error;
@@ -276,7 +285,7 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/shopify/sync', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${getToken()}` },
+        headers: getAuthHeaders(),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao sincronizar.');
@@ -317,7 +326,7 @@ export default function AdminPage() {
     try {
       const res = await fetch(`/api/pedidos/${id}/enviar-rastreio`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${getToken()}` },
+        headers: getAuthHeaders(),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao enviar.');
@@ -353,7 +362,7 @@ export default function AdminPage() {
     try {
       const res = await fetch(`/api/rastreio/${selectedOrder.trackings.codigo_rastreio}/atualizar`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ status: updateStatus, descricao: updateDesc, local: updateLocal }),
       });
       if (!res.ok) {
@@ -377,7 +386,7 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/settings', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           SHOPIFY_STORE_DOMAIN: shopifyDomain,
           SHOPIFY_ADMIN_TOKEN: shopifyToken,
