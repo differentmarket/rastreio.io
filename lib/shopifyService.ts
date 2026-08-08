@@ -7,7 +7,50 @@ interface ShopifyConfig {
 }
 
 /**
+ * Renova o token Shopify via client_credentials grant.
+ * O token expira em 24h, então chamamos isso antes de cada operação.
+ */
+async function refreshShopifyToken(domain: string): Promise<string | null> {
+  const clientId = process.env.SHOPIFY_CLIENT_ID || '';
+  const clientSecret = process.env.SHOPIFY_CLIENT_SECRET || '';
+
+  if (!clientId || !clientSecret || !domain) return null;
+
+  try {
+    const cleanDomain = domain.replace(/^https?:\/\//, '');
+    const res = await fetch(`https://${cleanDomain}/admin/oauth/access_token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=client_credentials&client_id=${clientId}&client_secret=${clientSecret}`,
+    });
+
+    if (!res.ok) {
+      console.warn('[Shopify] Falha ao renovar token:', await res.text());
+      return null;
+    }
+
+    const data = await res.json();
+    const newToken: string = data.access_token;
+
+    if (newToken) {
+      // Persiste o token renovado no banco para o painel admin refletir
+      await supabaseAdmin
+        .from('settings')
+        .upsert([{ key: 'SHOPIFY_ADMIN_TOKEN', value: newToken }], { onConflict: 'key' });
+
+      console.log('[Shopify] Token renovado com sucesso.');
+    }
+
+    return newToken || null;
+  } catch (err) {
+    console.warn('[Shopify] Erro ao tentar renovar token:', err);
+    return null;
+  }
+}
+
+/**
  * Recupera as chaves da Shopify da tabela settings ou das variáveis de ambiente.
+ * Sempre renova o token antes de retornar para garantir que não está expirado.
  */
 export async function getShopifyConfig(): Promise<ShopifyConfig> {
   const config = {
@@ -36,6 +79,12 @@ export async function getShopifyConfig(): Promise<ShopifyConfig> {
     }
   } catch (err) {
     console.warn('Erro ao ler configurações do Supabase, usando padrão de env:', err);
+  }
+
+  // Renova o token automaticamente antes de cada uso
+  if (config.domain && !config.domain.includes('mock-store')) {
+    const freshToken = await refreshShopifyToken(config.domain);
+    if (freshToken) config.token = freshToken;
   }
 
   return config;
