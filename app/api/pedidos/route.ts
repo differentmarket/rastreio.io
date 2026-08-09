@@ -11,7 +11,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
     }
 
-    // Bypass com dados mockados para testes locais sem banco de dados
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     if (supabaseUrl.includes('mock-project')) {
       const mockOrders = [
@@ -24,91 +23,53 @@ export async function GET(req: NextRequest) {
           created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
           customers: { nome: "Carlos Silva", email: "carlos.silva@example.com" },
           trackings: { codigo_rastreio: "BR2607X8F3K9", status: "entregue" }
-        },
-        {
-          id: "mock-order-2",
-          shopify_order_id: 1002,
-          numero_pedido: "1002",
-          status_pedido: "pago",
-          valor_total: 120.50,
-          created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-          customers: { nome: "Maria Souza", email: "maria.souza@example.com" },
-          trackings: { codigo_rastreio: "BR2607A3F9K1", status: "em_transito" }
-        },
-        {
-          id: "mock-order-3",
-          shopify_order_id: 1003,
-          numero_pedido: "1003",
-          status_pedido: "pendente",
-          valor_total: 450.00,
-          created_at: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
-          customers: { nome: "João Pereira", email: "joao.pereira@example.com" },
-          trackings: { codigo_rastreio: "BR2607T4Y7P2", status: "postado" }
         }
       ];
       return NextResponse.json(mockOrders);
     }
 
-    // Busca pedidos com informações básicas do cliente e código/status de rastreio
-    const { data: orders, error } = await supabaseAdmin
+    // 1. Busca todos os pedidos
+    const { data: rawOrders, error: ordersErr } = await supabaseAdmin
       .from('orders')
-      .select(`
-        id,
-        shopify_order_id,
-        numero_pedido,
-        status_pedido,
-        valor_total,
-        created_at,
-        customers (
-          nome,
-          email
-        ),
-        trackings (
-          codigo_rastreio,
-          status,
-          email_enviado,
-          email_enviado_em,
-          shopify_synced
-        )
-      `)
+      .select('*')
       .order('created_at', { ascending: false });
 
-    if (error) {
-      console.error('Erro ao buscar pedidos:', error);
-      // Tenta fallback sem os joins se der erro de relação
-      const { data: fallbackOrders } = await supabaseAdmin
-        .from('orders')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (fallbackOrders) {
-        return NextResponse.json(fallbackOrders.map((o: any) => ({
-          ...o,
-          numero_pedido: o.numero_pedido || `#${o.order_number || o.shopify_order_id}`,
-          customers: o.customers || (o.cliente_nome ? { nome: o.cliente_nome, email: o.cliente_email } : null),
-          trackings: o.trackings || null,
-        })));
-      }
-
-      return NextResponse.json(
-        { error: 'Falha ao buscar pedidos do banco de dados.' },
-        { status: 500 }
-      );
+    if (ordersErr || !rawOrders) {
+      console.error('Erro ao buscar orders:', ordersErr);
+      return NextResponse.json({ error: 'Falha ao buscar pedidos do banco.' }, { status: 500 });
     }
 
-    const formattedOrders = (orders || []).map((o: any) => ({
-      ...o,
-      numero_pedido: o.numero_pedido || `#${o.order_number || o.shopify_order_id}`,
-      customers: Array.isArray(o.customers) ? o.customers[0] : o.customers,
-      trackings: Array.isArray(o.trackings) ? o.trackings[0] : o.trackings,
-    }));
+    if (rawOrders.length === 0) {
+      return NextResponse.json([]);
+    }
+
+    // 2. Busca todos os clientes e trackings para vincular manualmente (sem depender de FK do Supabase)
+    const { data: customers } = await supabaseAdmin.from('customers').select('id, nome, email');
+    const { data: trackings } = await supabaseAdmin.from('trackings').select('order_id, codigo_rastreio, status, email_enviado, email_enviado_em, shopify_synced');
+
+    const customerMap = new Map((customers || []).map(c => [c.id, c]));
+    const trackingMap = new Map((trackings || []).map(t => [t.order_id, t]));
+
+    const formattedOrders = rawOrders.map((o: any) => {
+      const cust = o.customer_id ? customerMap.get(o.customer_id) : null;
+      const trk = trackingMap.get(o.id);
+
+      return {
+        id: o.id,
+        shopify_order_id: o.shopify_order_id,
+        numero_pedido: o.numero_pedido || `#${o.order_number || o.shopify_order_id}`,
+        status_pedido: o.status_pedido || o.status_pedidos || 'pago',
+        valor_total: o.valor_total || 0,
+        created_at: o.created_at,
+        customers: cust || (o.cliente_nome ? { nome: o.cliente_nome, email: o.cliente_email } : null),
+        trackings: trk || null,
+        raw_payload: o.raw_payload,
+      };
+    });
 
     return NextResponse.json(formattedOrders);
   } catch (err: any) {
     console.error('Erro na rota de listagem de pedidos:', err);
-    return NextResponse.json(
-      { error: err.message || 'Erro interno do servidor.' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: err.message || 'Erro interno do servidor.' }, { status: 500 });
   }
 }

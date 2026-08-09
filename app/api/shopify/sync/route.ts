@@ -134,139 +134,175 @@ export async function POST(req: NextRequest) {
     }
 
     const resultados: { numero_pedido: string; acao: 'criado' | 'atualizado'; id: string }[] = [];
+    const logs: { tipo: 'sucesso' | 'aviso' | 'erro'; mensagem: string; data: string }[] = [];
+
+    logs.push({ tipo: 'sucesso', mensagem: `Busca concluída na Shopify. Total de pedidos recebidos: ${shopifyOrders.length}`, data: new Date().toISOString() });
 
     for (const shopifyOrder of shopifyOrders) {
       const shopifyOrderId = shopifyOrder.id;
       const orderNumber = String(shopifyOrder.order_number);
       const totalVal = parseFloat(shopifyOrder.total_price) || 0;
 
-      // Status interno
-      let statusPedido = 'pendente';
-      if (shopifyOrder.financial_status === 'paid') statusPedido = 'pago';
-      if (shopifyOrder.fulfillment_status === 'fulfilled') statusPedido = 'enviado';
+      try {
+        // Status interno
+        let statusPedido = 'pendente';
+        if (shopifyOrder.financial_status === 'paid') statusPedido = 'pago';
+        if (shopifyOrder.fulfillment_status === 'fulfilled') statusPedido = 'enviado';
 
-      // Upsert do cliente
-      let customerId: string | null = null;
-      if (shopifyOrder.customer) {
-        const cust = shopifyOrder.customer;
-        const customerName = `${cust.first_name || ''} ${cust.last_name || ''}`.trim() || 'Cliente Shopify';
+        // Upsert do cliente
+        let customerId: string | null = null;
+        if (shopifyOrder.customer) {
+          const cust = shopifyOrder.customer;
+          const customerName = `${cust.first_name || ''} ${cust.last_name || ''}`.trim() || 'Cliente Shopify';
+
+          if (isMock) {
+            customerId = `mock-cust-${cust.id}`;
+          } else {
+            const { data: existingCustomer, error: custFetchErr } = await supabaseAdmin
+              .from('customers')
+              .select('id')
+              .eq('shopify_customer_id', cust.id)
+              .maybeSingle();
+
+            if (custFetchErr) {
+              logs.push({ tipo: 'aviso', mensagem: `Aviso ao consultar cliente para o pedido #${orderNumber}: ${custFetchErr.message}`, data: new Date().toISOString() });
+            }
+
+            if (existingCustomer) {
+              customerId = existingCustomer.id;
+              await supabaseAdmin.from('customers').update({
+                nome: customerName,
+                email: cust.email,
+                telefone: cust.phone,
+              }).eq('id', customerId);
+            } else {
+              const { data: newCustomer, error: custInsErr } = await supabaseAdmin.from('customers').insert({
+                shopify_customer_id: cust.id,
+                nome: customerName,
+                email: cust.email,
+                telefone: cust.phone,
+              }).select('id').single();
+              
+              if (custInsErr) {
+                logs.push({ tipo: 'erro', mensagem: `Erro ao criar cliente para o pedido #${orderNumber}: ${custInsErr.message}`, data: new Date().toISOString() });
+              } else if (newCustomer) {
+                customerId = newCustomer.id;
+              }
+            }
+          }
+        }
+
+        // Upsert do endereço
+        let addressId: string | null = null;
+        if (!isMock && customerId && shopifyOrder.shipping_address) {
+          const addr = shopifyOrder.shipping_address;
+          const { data: newAddr, error: addrErr } = await supabaseAdmin.from('addresses').insert({
+            customer_id: customerId,
+            logradouro: addr.address1,
+            complemento: addr.address2,
+            cidade: addr.city,
+            estado: addr.province_code ? addr.province_code.substring(0, 2).toUpperCase() : null,
+            cep: addr.zip ? addr.zip.replace(/\D/g, '') : null,
+            pais: addr.country_code || 'BR',
+          }).select('id').single();
+
+          if (addrErr) {
+            logs.push({ tipo: 'aviso', mensagem: `Erro ao salvar endereço para o pedido #${orderNumber}: ${addrErr.message}`, data: new Date().toISOString() });
+          } else if (newAddr) {
+            addressId = newAddr.id;
+          }
+        }
+
+        // Upsert do pedido
+        let orderDbId: string | null = null;
+        let isNew = false;
 
         if (isMock) {
-          // Em modo mock, simula IDs de clientes
-          customerId = `mock-cust-${cust.id}`;
+          orderDbId = `mock-shopify-${shopifyOrderId}`;
+          isNew = true;
         } else {
-          const { data: existingCustomer } = await supabaseAdmin
-            .from('customers')
+          const { data: existingOrder, error: orderCheckErr } = await supabaseAdmin
+            .from('orders')
             .select('id')
-            .eq('shopify_customer_id', cust.id)
+            .eq('shopify_order_id', shopifyOrderId)
             .maybeSingle();
 
-          if (existingCustomer) {
-            customerId = existingCustomer.id;
-            await supabaseAdmin.from('customers').update({
-              nome: customerName,
-              email: cust.email,
-              telefone: cust.phone,
-            }).eq('id', customerId);
+          if (orderCheckErr) {
+            logs.push({ tipo: 'erro', mensagem: `Erro ao verificar existência do pedido #${orderNumber}: ${orderCheckErr.message}`, data: new Date().toISOString() });
+          }
+
+          if (existingOrder) {
+            orderDbId = existingOrder.id;
+            const { error: updErr } = await supabaseAdmin.from('orders').update({
+              status_pedido: statusPedido,
+              valor_total: totalVal,
+              itens: shopifyOrder.line_items,
+            }).eq('id', orderDbId);
+
+            if (updErr) {
+              logs.push({ tipo: 'erro', mensagem: `Erro ao atualizar pedido #${orderNumber} no Supabase: ${updErr.message}`, data: new Date().toISOString() });
+            } else {
+              resultados.push({ numero_pedido: orderNumber, acao: 'atualizado', id: orderDbId! });
+              logs.push({ tipo: 'sucesso', mensagem: `Pedido #${orderNumber} atualizado com sucesso.`, data: new Date().toISOString() });
+            }
           } else {
-            const { data: newCustomer } = await supabaseAdmin.from('customers').insert({
-              shopify_customer_id: cust.id,
-              nome: customerName,
-              email: cust.email,
-              telefone: cust.phone,
+            const { data: newOrder, error: insErr } = await supabaseAdmin.from('orders').insert({
+              shopify_order_id: shopifyOrderId,
+              customer_id: customerId,
+              address_id: addressId,
+              numero_pedido: orderNumber,
+              status_pedido: statusPedido,
+              valor_total: totalVal,
+              itens: shopifyOrder.line_items,
             }).select('id').single();
-            if (newCustomer) customerId = newCustomer.id;
+
+            if (insErr) {
+              logs.push({ tipo: 'erro', mensagem: `Erro ao gravar pedido #${orderNumber} no Supabase: ${insErr.message}`, data: new Date().toISOString() });
+            } else if (newOrder) {
+              orderDbId = newOrder.id;
+              isNew = true;
+              resultados.push({ numero_pedido: orderNumber, acao: 'criado', id: orderDbId! });
+              logs.push({ tipo: 'sucesso', mensagem: `Pedido #${orderNumber} criado e salvo no banco.`, data: new Date().toISOString() });
+            }
           }
         }
-      }
 
-      // Upsert do endereço
-      let addressId: string | null = null;
-      if (!isMock && customerId && shopifyOrder.shipping_address) {
-        const addr = shopifyOrder.shipping_address;
-        const { data: newAddr } = await supabaseAdmin.from('addresses').insert({
-          customer_id: customerId,
-          logradouro: addr.address1,
-          complemento: addr.address2,
-          cidade: addr.city,
-          estado: addr.province_code ? addr.province_code.substring(0, 2).toUpperCase() : null,
-          cep: addr.zip ? addr.zip.replace(/\D/g, '') : null,
-          pais: addr.country_code || 'BR',
-        }).select('id').single();
-        if (newAddr) addressId = newAddr.id;
-      }
-
-      // Upsert do pedido
-      let orderDbId: string | null = null;
-      let isNew = false;
-
-      if (isMock) {
-        orderDbId = `mock-shopify-${shopifyOrderId}`;
-        isNew = true; // sempre trata como novo no mock para fins de demo
-      } else {
-        const { data: existingOrder } = await supabaseAdmin
-          .from('orders')
-          .select('id')
-          .eq('shopify_order_id', shopifyOrderId)
-          .maybeSingle();
-
-        if (existingOrder) {
-          orderDbId = existingOrder.id;
-          await supabaseAdmin.from('orders').update({
-            status_pedido: statusPedido,
-            valor_total: totalVal,
-            itens: shopifyOrder.line_items,
-          }).eq('id', orderDbId);
-          resultados.push({ numero_pedido: orderNumber, acao: 'atualizado', id: orderDbId! });
-        } else {
-          const { data: newOrder } = await supabaseAdmin.from('orders').insert({
-            shopify_order_id: shopifyOrderId,
-            customer_id: customerId,
-            address_id: addressId,
-            numero_pedido: orderNumber,
-            status_pedido: statusPedido,
-            valor_total: totalVal,
-            itens: shopifyOrder.line_items,
-          }).select('id').single();
-          if (newOrder) {
-            orderDbId = newOrder.id;
-            isNew = true;
-          }
-        }
-      }
-
-      // Criar tracking se pedido novo (produção)
-      if (!isMock && isNew && orderDbId) {
-        const codigo = gerarCodigoRastreio(String(shopifyOrderId));
-        const syncAfter = addOneBusinessDay().toISOString();
-        await supabaseAdmin.from('trackings').insert({
-          order_id: orderDbId,
-          codigo_rastreio: codigo,
-          shopify_synced: false,
-          shopify_fulfilled: false,
-          email_enviado: false,
-          sync_after: syncAfter,
-          status: 'postado',
-          historico: [{
+        // Criar tracking se pedido novo (produção)
+        if (!isMock && isNew && orderDbId) {
+          const codigo = gerarCodigoRastreio(String(shopifyOrderId));
+          const syncAfter = addOneBusinessDay().toISOString();
+          const { error: trkErr } = await supabaseAdmin.from('trackings').insert({
+            order_id: orderDbId,
+            codigo_rastreio: codigo,
+            shopify_synced: false,
+            shopify_fulfilled: false,
+            email_enviado: false,
+            sync_after: syncAfter,
             status: 'postado',
-            data: new Date().toISOString(),
-            descricao: 'Pedido sincronizado da Shopify e aguardando postagem.',
-            local: 'Logística Interna',
-          }],
-        });
-        resultados.push({ numero_pedido: orderNumber, acao: 'criado', id: orderDbId });
-      }
+            historico: [{
+              status: 'postado',
+              data: new Date().toISOString(),
+              descricao: 'Pedido sincronizado da Shopify e aguardando postagem.',
+              local: 'Logística Interna',
+            }],
+          });
 
-      if (isMock) {
-        resultados.push({ numero_pedido: orderNumber, acao: isNew ? 'criado' : 'atualizado', id: orderDbId! });
+          if (trkErr) {
+            logs.push({ tipo: 'aviso', mensagem: `Erro ao criar rastreamento para #${orderNumber}: ${trkErr.message}`, data: new Date().toISOString() });
+          }
+        }
+      } catch (orderLoopErr: any) {
+        logs.push({ tipo: 'erro', mensagem: `Falha crítica ao processar pedido #${orderNumber}: ${orderLoopErr.message}`, data: new Date().toISOString() });
       }
     }
 
     return NextResponse.json({
       success: true,
       sincronizados: shopifyOrders.length,
+      criados: resultados.filter(r => r.acao === 'criado').length,
+      atualizados: resultados.filter(r => r.acao === 'atualizado').length,
       resultados,
-      // Em modo mock, retorna os pedidos completos para o admin usar direto
+      logs,
       mockOrders: isMock ? shopifyOrders.map((o) => ({
         id: `mock-shopify-${o.id}`,
         shopify_order_id: o.id,
@@ -297,9 +333,6 @@ export async function POST(req: NextRequest) {
           shopify_synced: o.fulfillment_status === 'fulfilled',
           historico: [
             { status: 'postado', data: o.created_at, descricao: 'Pedido sincronizado da Shopify.', local: 'Logística Interna' },
-            ...(o.fulfillment_status === 'fulfilled' ? [
-              { status: 'entregue', data: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(), descricao: 'Objeto entregue ao destinatário.', local: `${o.shipping_address?.city} - ${o.shipping_address?.province_code?.substring(0, 2)}` }
-            ] : []),
           ],
         },
       })) : undefined,
