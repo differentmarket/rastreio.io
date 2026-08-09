@@ -65,13 +65,31 @@ export async function GET(req: NextRequest) {
         ),
         trackings (
           codigo_rastreio,
-          status
+          status,
+          email_enviado,
+          email_enviado_em,
+          shopify_synced
         )
       `)
       .order('created_at', { ascending: false });
 
     if (error) {
       console.error('Erro ao buscar pedidos:', error);
+      // Tenta fallback sem os joins se der erro de relação
+      const { data: fallbackOrders } = await supabaseAdmin
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (fallbackOrders) {
+        return NextResponse.json(fallbackOrders.map((o: any) => ({
+          ...o,
+          numero_pedido: o.numero_pedido || `#${o.order_number || o.shopify_order_id}`,
+          customers: o.customers || (o.cliente_nome ? { nome: o.cliente_nome, email: o.cliente_email } : null),
+          trackings: o.trackings || null,
+        })));
+      }
+
       return NextResponse.json(
         { error: 'Falha ao buscar pedidos do banco de dados.' },
         { status: 500 }
@@ -80,6 +98,7 @@ export async function GET(req: NextRequest) {
 
     const formattedOrders = (orders || []).map((o: any) => ({
       ...o,
+      numero_pedido: o.numero_pedido || `#${o.order_number || o.shopify_order_id}`,
       customers: Array.isArray(o.customers) ? o.customers[0] : o.customers,
       trackings: Array.isArray(o.trackings) ? o.trackings[0] : o.trackings,
     }));
