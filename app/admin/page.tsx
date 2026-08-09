@@ -333,12 +333,11 @@ export default function AdminPage() {
     }
   };
 
-  const handleSendEmail = async (orderId?: string) => {
+  const handleSendNotification = async (tipo: 'rastreio' | 'nota' | 'ambos', orderId?: string) => {
     const id = orderId || selectedOrder?.id;
     if (!id) return;
 
     if (orderId) {
-      // Chamada da fila
       setResendingId(orderId);
     } else {
       setSendingEmail(true);
@@ -348,28 +347,20 @@ export default function AdminPage() {
     }
 
     try {
-      const res = await fetch(`/api/pedidos/${id}/enviar-rastreio`, {
+      const res = await fetch(`/api/pedidos/${id}/enviar-notificacao`, {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ tipo }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erro ao enviar.');
+      if (!res.ok) throw new Error(data.error || 'Erro ao enviar notificação.');
 
       if (!orderId) {
         setEmailSent(true);
         setShopifyFulfilled(data.shopifyFulfilled);
-        // Atualiza o pedido na lista
-        setOrders(prev => prev.map(o => o.id === id
-          ? { ...o, trackings: o.trackings ? { ...o.trackings, email_enviado: true, email_enviado_em: new Date().toISOString() } : o.trackings }
-          : o
-        ));
+        fetchOrderDetail(id);
+        fetchOrders();
       }
-
-      // Atualiza a fila
-      setEmailQueue(prev => prev.map(o => o.id === id
-        ? { ...o, trackings: o.trackings ? { ...o.trackings, email_enviado: true, email_enviado_em: new Date().toISOString(), shopify_synced: data.shopifyFulfilled || false } : o.trackings }
-        : o
-      ));
     } catch (err: any) {
       if (!orderId) setEmailError(err.message || 'Falha ao enviar e-mail.');
     } finally {
@@ -821,23 +812,29 @@ export default function AdminPage() {
                             <FileText className="w-3.5 h-3.5" /> Nota de Compra
                           </button>
 
-                          <button onClick={() => handleSendEmail()}
-                            disabled={sendingEmail || emailSent}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all text-xs font-semibold shadow-md ${
-                              emailSent
-                                ? 'bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 cursor-default'
-                                : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white disabled:opacity-60'
-                            }`}>
-                            {sendingEmail ? (
-                              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Enviando...</>
-                            ) : emailSent ? (
-                              <><CheckCheck className="w-3.5 h-3.5" /> E-mail + Shopify OK!</>
-                            ) : (
-                              <><Zap className="w-3.5 h-3.5" /> Enviar rastreio + processar Shopify</>
-                            )}
-                          </button>
-                        </div>
-                      )}
+                            <button onClick={() => handleSendNotification('nota')}
+                              disabled={sendingEmail}
+                              className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-slate-200 border border-slate-700/80 rounded-xl transition-all text-xs font-semibold shadow-md">
+                              <Mail className="w-3.5 h-3.5 text-blue-400" /> Enviar Nota por E-mail
+                            </button>
+
+                            <button onClick={() => handleSendNotification('ambos')}
+                              disabled={sendingEmail || emailSent}
+                              className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all text-xs font-semibold shadow-md ${
+                                emailSent
+                                  ? 'bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 cursor-default'
+                                  : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white disabled:opacity-60'
+                              }`}>
+                              {sendingEmail ? (
+                                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Enviando...</>
+                              ) : emailSent ? (
+                                <><CheckCheck className="w-3.5 h-3.5" /> E-mail + Shopify OK!</>
+                              ) : (
+                                <><Zap className="w-3.5 h-3.5" /> Enviar Rastreio + Nota</>
+                              )}
+                            </button>
+                          </div>
+                        )}
                     </div>
                   </div>
                 </div>
@@ -1070,7 +1067,7 @@ export default function AdminPage() {
                           </td>
                           <td className="px-4 py-3 text-center">
                             {!item.trackings?.email_enviado ? (
-                              <button onClick={() => handleSendEmail(item.id)}
+                              <button onClick={() => handleSendNotification('ambos', item.id)}
                                 disabled={resendingId === item.id}
                                 className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-lg text-[10px] font-semibold text-white transition-colors mx-auto">
                                 {resendingId === item.id
@@ -1078,7 +1075,7 @@ export default function AdminPage() {
                                   : <><Send className="w-3 h-3" /> Enviar</>}
                               </button>
                             ) : (
-                              <button onClick={() => handleSendEmail(item.id)}
+                              <button onClick={() => handleSendNotification('ambos', item.id)}
                                 disabled={resendingId === item.id}
                                 className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 rounded-lg text-[10px] font-semibold text-slate-400 transition-colors mx-auto">
                                 {resendingId === item.id
