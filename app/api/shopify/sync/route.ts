@@ -96,6 +96,7 @@ export async function POST(req: NextRequest) {
       shopifyOrders = getMockShopifyOrders();
     } else {
       // Produção: buscar TODOS os pedidos da Shopify com paginação
+      const config = await getShopifyConfig();
       if (!config.domain || !config.token) {
         return NextResponse.json({ error: 'Shopify não configurado. Configure o domínio e token na aba de configurações.' }, { status: 422 });
       }
@@ -104,7 +105,7 @@ export async function POST(req: NextRequest) {
       let nextUrl: string | null = `https://${cleanDomain}/admin/api/2024-10/orders.json?status=any&limit=250&fields=id,order_number,financial_status,fulfillment_status,total_price,created_at,customer,shipping_address,line_items`;
 
       while (nextUrl) {
-        const res = await fetch(nextUrl, {
+        const res: Response = await fetch(nextUrl, {
           headers: {
             'X-Shopify-Access-Token': config.token,
             'Content-Type': 'application/json',
