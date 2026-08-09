@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
       }
 
       const cleanDomain = config.domain.replace(/^https?:\/\//, '');
-      let nextUrl: string | null = `https://${cleanDomain}/admin/api/2024-10/orders.json?status=any&limit=250&fields=id,order_number,financial_status,fulfillment_status,total_price,created_at,customer,shipping_address,line_items`;
+      let nextUrl: string | null = `https://${cleanDomain}/admin/api/2024-10/orders.json?status=any&financial_status=paid&limit=250&fields=id,order_number,financial_status,fulfillment_status,total_price,created_at,customer,shipping_address,line_items`;
 
       while (nextUrl) {
         const res: Response = await fetch(nextUrl, {
