@@ -95,14 +95,7 @@ export async function POST(req: NextRequest) {
     if (isMock) {
       shopifyOrders = getMockShopifyOrders();
     } else {
-      // Produção: buscar pedidos reais da Shopify
-      const config = await getShopifyConfig();
-      if (!config.domain || !config.token) {
-        return NextResponse.json({ error: 'Shopify não configurado. Configure o domínio e token na aba de configurações.' }, { status: 422 });
-      }
-
       // Produção: buscar TODOS os pedidos da Shopify com paginação
-      const config = await getShopifyConfig();
       if (!config.domain || !config.token) {
         return NextResponse.json({ error: 'Shopify não configurado. Configure o domínio e token na aba de configurações.' }, { status: 422 });
       }
