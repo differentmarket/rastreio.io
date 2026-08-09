@@ -101,24 +101,42 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Shopify não configurado. Configure o domínio e token na aba de configurações.' }, { status: 422 });
       }
 
-      const cleanDomain = config.domain.replace(/^https?:\/\//, '');
-      const url = `https://${cleanDomain}/admin/api/2024-10/orders.json?status=any&limit=50&fields=id,order_number,financial_status,fulfillment_status,total_price,created_at,customer,shipping_address,line_items`;
-
-      const res = await fetch(url, {
-        headers: {
-          'X-Shopify-Access-Token': config.token,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!res.ok) {
-        const errText = await res.text();
-        console.error('Erro ao buscar pedidos da Shopify:', errText);
-        return NextResponse.json({ error: 'Falha ao conectar com a Shopify. Verifique o token e domínio.' }, { status: 502 });
+      // Produção: buscar TODOS os pedidos da Shopify com paginação
+      const config = await getShopifyConfig();
+      if (!config.domain || !config.token) {
+        return NextResponse.json({ error: 'Shopify não configurado. Configure o domínio e token na aba de configurações.' }, { status: 422 });
       }
 
-      const data = await res.json();
-      shopifyOrders = data.orders || [];
+      const cleanDomain = config.domain.replace(/^https?:\/\//, '');
+      let nextUrl: string | null = `https://${cleanDomain}/admin/api/2024-10/orders.json?status=any&limit=250&fields=id,order_number,financial_status,fulfillment_status,total_price,created_at,customer,shipping_address,line_items`;
+
+      while (nextUrl) {
+        const res = await fetch(nextUrl, {
+          headers: {
+            'X-Shopify-Access-Token': config.token,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          console.error('Erro ao buscar pedidos da Shopify:', errText);
+          return NextResponse.json({ error: 'Falha ao conectar com a Shopify. Verifique o token e domínio.' }, { status: 502 });
+        }
+
+        const data = await res.json();
+        const pageOrders = data.orders || [];
+        shopifyOrders.push(...pageOrders);
+
+        // Verifica cabeçalho Link para proxima página da Shopify
+        const linkHeader = res.headers.get('Link');
+        if (linkHeader && linkHeader.includes('rel="next"')) {
+          const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+          nextUrl = match ? match[1] : null;
+        } else {
+          nextUrl = null;
+        }
+      }
     }
 
     const resultados: { numero_pedido: string; acao: 'criado' | 'atualizado'; id: string }[] = [];
