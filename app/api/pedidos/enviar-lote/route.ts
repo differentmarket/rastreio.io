@@ -117,10 +117,12 @@ export async function POST(req: NextRequest) {
 
       const notaJaEnviada     = o.raw_payload?.nota_enviada === true;
       const rastreioJaEnviado  = trk?.email_enviado === true;
+      const criadoEmDiaAnterior = isAnteriorAHoje(o.created_at);
 
-      // Se for disparo manual do admin, envia sem travas de delay
+      // REGRA 1: Não pode enviar rastreio no mesmo dia da compra (criadoEmDiaAnterior === true)
+      // REGRA 2: Não pode enviar rastreio sem a Nota Fiscal ter sido enviada antes (notaJaEnviada === true)
       const podeEnviarNota = !notaJaEnviada && (isManualTrigger || passouDelayHoras(o.created_at, notaDelayHoras));
-      const podeEnviarRastreio = !rastreioJaEnviado && (isManualTrigger || !rastreioProximoDiaUtil || isAnteriorAHoje(o.created_at));
+      const podeEnviarRastreio = !rastreioJaEnviado && criadoEmDiaAnterior && notaJaEnviada;
 
       if (tipo === 'rastreio') return podeEnviarRastreio;
       if (tipo === 'nota')     return podeEnviarNota;
@@ -163,9 +165,10 @@ export async function POST(req: NextRequest) {
 
       const notaJaEnviada     = order.raw_payload?.nota_enviada === true;
       const rastreioJaEnviado  = trk?.email_enviado === true;
+      const criadoEmDiaAnterior = isAnteriorAHoje(order.created_at);
 
       const podeEnviarNota = !notaJaEnviada && (isManualTrigger || passouDelayHoras(order.created_at, notaDelayHoras));
-      const podeEnviarRastreio = !rastreioJaEnviado && (isManualTrigger || !rastreioProximoDiaUtil || isAnteriorAHoje(order.created_at));
+      const podeEnviarRastreio = !rastreioJaEnviado && criadoEmDiaAnterior && notaJaEnviada;
 
       // Extrair método de envio do raw_payload
       const shippingMethod = order.raw_payload?.shipping_lines?.[0]?.title || null;

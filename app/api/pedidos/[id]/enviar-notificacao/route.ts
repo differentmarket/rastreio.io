@@ -172,38 +172,43 @@ export async function POST(
       }).eq('id', order.id);
     };
 
-    // Executar os envios de forma resiliente
-    if (tipo === 'rastreio') {
-      try {
-        await enviarEmailRastreio();
-        statusRastreio.sucesso = true;
-      } catch (err: any) {
-        statusRastreio.erro = err.message || 'Erro desconhecido';
-      }
-    } else if (tipo === 'nota') {
-      try {
-        await enviarEmailNota();
-        statusNota.sucesso = true;
-      } catch (err: any) {
-        statusNota.erro = err.message || 'Erro desconhecido';
-      }
-    } else if (tipo === 'ambos') {
-      // Execução paralela resiliente
-      const promessas = [];
-      
-      promessas.push(
-        enviarEmailRastreio()
-          .then(() => { statusRastreio.sucesso = true; })
-          .catch((err) => { statusRastreio.erro = err.message || 'Erro desconhecido'; })
-      );
+    function isAnteriorAHoje(orderCreatedAt: string): boolean {
+      const orderDay = new Date(new Date(orderCreatedAt).getFullYear(), new Date(orderCreatedAt).getMonth(), new Date(orderCreatedAt).getDate());
+      const todayDay = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+      return orderDay < todayDay;
+    }
 
-      promessas.push(
-        enviarEmailNota()
-          .then(() => { statusNota.sucesso = true; })
-          .catch((err) => { statusNota.erro = err.message || 'Erro desconhecido'; })
-      );
+    const criadoEmDiaAnterior = isAnteriorAHoje(order.created_at);
+    let notaJaEnviada = (order as any).raw_payload?.nota_enviada === true;
 
-      await Promise.all(promessas);
+    // Execução sequencial resiliente (Nota Fiscal primeiro, Rastreio depois se permitido)
+    if (tipo === 'nota' || tipo === 'ambos') {
+      if (!notaJaEnviada || force) {
+        try {
+          await enviarEmailNota();
+          statusNota.sucesso = true;
+          notaJaEnviada = true;
+        } catch (err: any) {
+          statusNota.erro = err.message || 'Erro ao enviar Nota Fiscal';
+        }
+      } else {
+        statusNota.sucesso = true; // Já havia sido enviada
+      }
+    }
+
+    if (tipo === 'rastreio' || tipo === 'ambos') {
+      if (!criadoEmDiaAnterior) {
+        statusRastreio.erro = 'Bloqueado pela Regra 1: Compras do mesmo dia não enviam rastreio (apenas a Nota Fiscal). O rastreio será enviado no próximo dia útil.';
+      } else if (!notaJaEnviada) {
+        statusRastreio.erro = 'Bloqueado pela Regra 2: É obrigatório enviar a Nota Fiscal antes do e-mail de rastreio.';
+      } else {
+        try {
+          await enviarEmailRastreio();
+          statusRastreio.sucesso = true;
+        } catch (err: any) {
+          statusRastreio.erro = err.message || 'Erro ao enviar Rastreio';
+        }
+      }
     }
 
     // Determinar sucesso geral da requisição

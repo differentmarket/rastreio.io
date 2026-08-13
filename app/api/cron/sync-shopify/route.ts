@@ -4,6 +4,16 @@ import { enviarRastreioShopify } from '@/lib/shopifyService';
 
 export const dynamic = 'force-dynamic';
 
+function getStartOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function isAnteriorAHoje(orderCreatedAt: string): boolean {
+  const orderDay = getStartOfDay(new Date(orderCreatedAt));
+  const todayDay = getStartOfDay(new Date());
+  return orderDay < todayDay;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const agoraIso = new Date().toISOString();
@@ -134,6 +144,16 @@ export async function GET(req: NextRequest) {
 
         let emailSucesso = tracking.email_enviado;
         let shopifySucesso = tracking.shopify_synced;
+
+        const notaJaEnviada = orderObj?.raw_payload?.nota_enviada === true;
+        const criadoEmDiaAnterior = orderObj?.created_at ? isAnteriorAHoje(orderObj.created_at) : false;
+
+        // REGRA 1: Não pode enviar rastreio no mesmo dia da compra
+        // REGRA 2: Não pode enviar rastreio sem a Nota Fiscal ter sido enviada previamente
+        if (!criadoEmDiaAnterior || !notaJaEnviada) {
+          console.log(`[BLOQUEIO REGRAS] Pedido #${orderObj?.numero_pedido} não elegível para rastreio. Dia Anterior: ${criadoEmDiaAnterior}, Nota Enviada: ${notaJaEnviada}`);
+          continue;
+        }
 
         // 1. Enviar e-mail de rastreio ao cliente se ainda não foi enviado
         if (!tracking.email_enviado && customer?.email && orderObj) {

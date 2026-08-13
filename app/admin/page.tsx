@@ -599,21 +599,33 @@ export default function AdminPage() {
       const listRes = await fetch('/api/fila-emails', { headers: getAuthHeaders() });
       const fullQueue: EmailQueueItem[] = await listRes.json();
 
+      const todayStart = new Date(new Date().setHours(0, 0, 0, 0)).getTime();
+
       let targetItems = (Array.isArray(fullQueue) ? fullQueue : []).filter(item => {
         if (!item.customers?.email) return false;
-        if (tipoNotificacao === 'nota') return !item.nota_enviada;
-        if (tipoNotificacao === 'rastreio') return !item.trackings?.email_enviado;
-        return !item.nota_enviada || !item.trackings?.email_enviado;
+
+        const criadoEmDiaAnterior = new Date(item.created_at).getTime() < todayStart;
+        const notaJaEnviada = !!item.nota_enviada;
+
+        if (tipoNotificacao === 'nota') {
+          // Pode enviar Nota Fiscal hoje ou em qualquer dia se ainda não enviou
+          return !notaJaEnviada;
+        }
+
+        if (tipoNotificacao === 'rastreio') {
+          // REGRA 1 & REGRA 2: Rastreio só se criado em dia anterior E Nota Fiscal já enviada
+          return !item.trackings?.email_enviado && criadoEmDiaAnterior && notaJaEnviada;
+        }
+
+        // tipo === 'ambos'
+        // Pode enviar Nota se não enviou, OU pode enviar Rastreio se respeitar as 2 regras
+        const podeEnviarNota = !notaJaEnviada;
+        const podeEnviarRastreio = !item.trackings?.email_enviado && criadoEmDiaAnterior && notaJaEnviada;
+        return podeEnviarNota || podeEnviarRastreio;
       });
 
-      if (periodo === 'exceto_hoje') {
-        const todayStart = new Date(new Date().setHours(0, 0, 0, 0)).getTime();
-        const antigos = targetItems.filter(i => new Date(i.created_at).getTime() < todayStart);
-        if (antigos.length > 0) targetItems = antigos;
-      }
-
       if (targetItems.length === 0) {
-        setBatchResult(`✅ 0 e-mails (${tipoNotificacao === 'nota' ? 'Notas Fiscais' : 'Geral'}) pendentes no momento!`);
+        setBatchResult(`✅ 0 e-mails elegíveis no momento (${tipoNotificacao === 'nota' ? 'Notas Fiscais' : 'Rastreios de compras anteriores com Nota enviada'}).`);
         return;
       }
 
