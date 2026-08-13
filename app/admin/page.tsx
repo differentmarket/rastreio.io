@@ -190,6 +190,15 @@ export default function AdminPage() {
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [batchSending, setBatchSending] = useState(false);
   const [batchResult, setBatchResult] = useState<string | null>(null);
+  const [batchProgress, setBatchProgress] = useState<{
+    ativo: boolean;
+    atual: number;
+    total: number;
+    sucessos: number;
+    erros: number;
+    percentual: number;
+    statusLog: string;
+  } | null>(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
 
   // Settings
@@ -584,22 +593,86 @@ export default function AdminPage() {
   ) => {
     setBatchSending(true);
     setBatchResult(null);
+    setBatchProgress(null);
     try {
-      const res = await fetch('/api/pedidos/enviar-lote', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ periodo, tipoNotificacao }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Falha ao disparar e-mails.');
+      // 1. Obter a lista atualizada de itens da fila
+      const listRes = await fetch('/api/fila-emails', { headers: getAuthHeaders() });
+      const fullQueue: EmailQueueItem[] = await listRes.json();
 
-      setBatchResult(`✅ ${data.disparados} e-mails (${tipoNotificacao === 'nota' ? 'Notas Fiscais' : 'Rastreio/Geral'}) enviados com sucesso de ${data.totalAlvo} elegíveis!`);
-      fetchOrders();
-      fetchEmailQueue();
+      let targetItems = (Array.isArray(fullQueue) ? fullQueue : []).filter(item => {
+        if (!item.customers?.email) return false;
+        if (tipoNotificacao === 'nota') return !item.nota_enviada;
+        if (tipoNotificacao === 'rastreio') return !item.trackings?.email_enviado;
+        return !item.nota_enviada || !item.trackings?.email_enviado;
+      });
+
+      if (periodo === 'exceto_hoje') {
+        const todayStart = new Date(new Date().setHours(0, 0, 0, 0)).getTime();
+        const antigos = targetItems.filter(i => new Date(i.created_at).getTime() < todayStart);
+        if (antigos.length > 0) targetItems = antigos;
+      }
+
+      if (targetItems.length === 0) {
+        setBatchResult(`✅ 0 e-mails (${tipoNotificacao === 'nota' ? 'Notas Fiscais' : 'Geral'}) pendentes no momento!`);
+        return;
+      }
+
+      setBatchProgress({
+        ativo: true,
+        atual: 0,
+        total: targetItems.length,
+        sucessos: 0,
+        erros: 0,
+        percentual: 0,
+        statusLog: `Iniciando disparo em lote para ${targetItems.length} pedidos elegíveis...`,
+      });
+
+      let okCount = 0;
+      let errCount = 0;
+
+      for (let i = 0; i < targetItems.length; i++) {
+        const item = targetItems[i];
+        const nomeCli = item.customers?.nome || 'Cliente';
+        const emailCli = item.customers?.email || '';
+
+        setBatchProgress({
+          ativo: true,
+          atual: i + 1,
+          total: targetItems.length,
+          sucessos: okCount,
+          erros: errCount,
+          percentual: Math.round(((i + 1) / targetItems.length) * 100),
+          statusLog: `Enviando ${tipoNotificacao === 'nota' ? 'Nota Fiscal' : 'Notificação'} para #${item.numero_pedido} — ${nomeCli} (${emailCli})...`,
+        });
+
+        try {
+          const res = await fetch('/api/pedidos/enviar-lote', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ periodo, tipoNotificacao, orderId: item.id }),
+          });
+          const data = await res.json();
+          if (res.ok && data.disparados > 0) {
+            okCount++;
+          } else {
+            errCount++;
+          }
+        } catch {
+          errCount++;
+        }
+
+        // Atualiza a tabela na tela em tempo real a cada envio
+        fetchEmailQueue();
+      }
+
+      setBatchResult(`🎉 Concluído! ${okCount} e-mails de ${tipoNotificacao === 'nota' ? 'Nota Fiscal' : 'Notificação'} enviados com sucesso de ${targetItems.length} elegíveis (${errCount} erros).`);
     } catch (err: any) {
       setBatchResult(`❌ ${err.message || 'Erro no envio em lote.'}`);
     } finally {
       setBatchSending(false);
+      setBatchProgress(null);
+      fetchOrders();
+      fetchEmailQueue();
     }
   };
 
@@ -1321,6 +1394,32 @@ export default function AdminPage() {
                 </button>
               </div>
             </div>
+
+            {batchProgress && (
+              <div className="p-4 bg-slate-900 border border-indigo-500/40 rounded-2xl space-y-3 animate-in fade-in shadow-2xl">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-white flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
+                    Enviando E-mails em Tempo Real...
+                  </span>
+                  <span className="font-mono text-indigo-400 font-bold">
+                    {batchProgress.atual} / {batchProgress.total} ({batchProgress.percentual}%)
+                  </span>
+                </div>
+
+                <div className="w-full bg-slate-950 rounded-full h-3 overflow-hidden border border-slate-800 p-0.5">
+                  <div
+                    className="bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-400 h-full transition-all duration-300 rounded-full"
+                    style={{ width: `${batchProgress.percentual}%` }}
+                  />
+                </div>
+
+                <p className="text-[11px] text-slate-300 font-medium truncate flex items-center gap-1.5 bg-slate-950/60 p-2 rounded-xl border border-slate-800">
+                  <Send className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span className="truncate">{batchProgress.statusLog}</span>
+                </p>
+              </div>
+            )}
 
             {batchResult && (
               <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-400 text-center font-semibold animate-in fade-in">

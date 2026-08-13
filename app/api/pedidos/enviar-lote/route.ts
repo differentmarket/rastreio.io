@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     // periodo: 'hoje' | 'ontem' | 'semana' | 'mes' | 'pendentes' | 'todos' | 'exceto_hoje'
     // tipoNotificacao: 'rastreio' | 'nota' | 'ambos'
     // forcarHoje: true = ignora regra de próximo dia útil para rastreio
-    const { periodo, tipoNotificacao, forcarHoje = false } = body;
+    const { periodo, tipoNotificacao, forcarHoje = false, orderId = null } = body;
     const tipo = tipoNotificacao || 'ambos';
 
     // ── Carregar configurações de disparo ─────────────────────────
@@ -69,7 +69,9 @@ export async function POST(req: NextRequest) {
     `);
 
     const now = new Date();
-    if (periodo === 'hoje') {
+    if (orderId) {
+      query = query.eq('id', orderId);
+    } else if (periodo === 'hoje') {
       const todayStart = getStartOfDay(now).toISOString();
       query = query.gte('created_at', todayStart);
     } else if (periodo === 'ontem') {
@@ -83,8 +85,7 @@ export async function POST(req: NextRequest) {
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
       query = query.gte('created_at', monthStart);
     } else if (periodo === 'exceto_hoje') {
-      // Busca pedidos anteriores ao dia de hoje.
-      // Caso todos os pedidos do banco tenham sido importados na mesma data, utiliza fallback para mais de 2h atrás.
+      // Busca pedidos criados antes do dia de hoje.
       const todayStart = getStartOfDay(now).toISOString();
       const twoHoursAgo = new Date(now.getTime() - 2 * 3600 * 1000).toISOString();
 
@@ -92,7 +93,11 @@ export async function POST(req: NextRequest) {
       if (checkOrders && checkOrders.length > 0) {
         query = query.lt('created_at', todayStart);
       } else {
-        query = query.lt('created_at', twoHoursAgo);
+        const { data: check2h } = await supabaseAdmin.from('orders').select('id').lt('created_at', twoHoursAgo).limit(1);
+        if (check2h && check2h.length > 0) {
+          query = query.lt('created_at', twoHoursAgo);
+        }
+        // Se nenhum order tem data antiga (pois foram todos sincronizados recentemente), busca sem restrição estrita de data
       }
     }
 

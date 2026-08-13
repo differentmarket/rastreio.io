@@ -277,6 +277,7 @@ export async function POST(req: NextRequest) {
               status_pedido: statusPedido,
               valor_total: totalVal,
               itens: shopifyOrder.line_items,
+              created_at: shopifyOrder.created_at || new Date().toISOString(),
             }).select('id').single();
 
             if (insErr) {
