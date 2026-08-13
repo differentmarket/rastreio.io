@@ -1,75 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { checkAdminAuth } from '@/lib/authHelper';
-import { enviarRastreioShopify } from '@/lib/shopifyService';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+// Rota de TESTE — ignora regras de duplicidade e timing
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
+
     const isAdmin = await checkAdminAuth(req);
-    if (!isAdmin) {
-      return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-    }
+    if (!isAdmin) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
 
     const body = await req.json().catch(() => ({}));
-    const tipo = body.tipo || 'ambos'; // 'rastreio' | 'nota' | 'ambos'
-    const force = body.force || false; // Se true, ignora trava de duplicidade
+    const tipo: 'nota' | 'rastreio' | 'ambos' = body.tipo || 'ambos';
+    const emailDestino: string | null = body.emailDestino || null;
 
-    // Busca detalhes do pedido, cliente, endereco e tracking
     const { data: order, error } = await supabaseAdmin
       .from('orders')
       .select(`
-        id,
-        shopify_order_id,
-        numero_pedido,
-        valor_total,
-        itens,
-        created_at,
-        raw_payload,
-        customers (
-          nome,
-          email,
-          telefone
-        ),
-        addresses (
-          logradouro,
-          numero,
-          complemento,
-          bairro,
-          cidade,
-          estado,
-          cep
-        ),
-        trackings (
-          id,
-          codigo_rastreio,
-          status,
-          email_enviado,
-          email_enviado_em,
-          shopify_synced
-        )
+        id, numero_pedido, valor_total, itens, raw_payload, created_at, shopify_order_id,
+        customers ( nome, email ),
+        addresses ( logradouro, numero, complemento, bairro, cidade, estado, cep ),
+        trackings ( id, codigo_rastreio, status, email_enviado )
       `)
       .eq('id', id)
-      .maybeSingle();
+      .single();
 
     if (error || !order) {
       return NextResponse.json({ error: 'Pedido não encontrado.' }, { status: 404 });
     }
 
-    const customer: any = Array.isArray(order.customers) ? order.customers[0] : order.customers;
-    const tracking: any = Array.isArray(order.trackings) ? order.trackings[0] : order.trackings;
-    const address: any = Array.isArray(order.addresses) ? order.addresses[0] : order.addresses;
+    const cust = Array.isArray(order.customers) ? order.customers[0] : order.customers;
+    const trk  = Array.isArray(order.trackings)  ? order.trackings[0]  : order.trackings;
+    const addr = Array.isArray(order.addresses)  ? order.addresses[0]  : order.addresses;
 
-    if (!customer?.email) {
-      return NextResponse.json({ error: 'Cliente não possui e-mail cadastrado.' }, { status: 400 });
+    if (!cust?.email && !emailDestino) {
+      return NextResponse.json({ error: 'Cliente sem e-mail cadastrado.' }, { status: 400 });
     }
 
-    // Carregar configurações do banco de dados
     const { data: settings } = await supabaseAdmin.from('settings').select('key, value');
     const cfg: Record<string, string> = {};
     settings?.forEach(s => { cfg[s.key] = s.value; });
@@ -84,158 +53,87 @@ export async function POST(
     if (!rawAppUrl || rawAppUrl.includes('localhost') || rawAppUrl.includes('ri7o2sjad')) {
       rawAppUrl = 'https://rastreio-io.vercel.app';
     }
-    const appUrl = rawAppUrl;
+    const appUrl      = rawAppUrl;
     const empresaNome = cfg['EMPRESA_NOME'] || 'Nossa Loja';
+    const toEmail     = emailDestino || cust?.email;
 
-    let statusRastreio = { sucesso: false, erro: '' };
-    let statusNota = { sucesso: false, erro: '' };
-    let shopifyFulfilled = false;
+    const results: { tipo: string; sucesso: boolean; erro?: string }[] = [];
 
-    // Função interna para enviar e-mail de rastreio
-    const enviarEmailRastreio = async () => {
-      if (!tracking?.codigo_rastreio) {
-        throw new Error('Pedido não possui código de rastreamento gerado.');
-      }
-      // Permite re-envio contínuo nas notificações manuais do admin
-      const trackingUrl = `${appUrl}/rastreio/${tracking.codigo_rastreio}`;
-      const htmlRastreio = buildRastreioHtml({ order, cust: customer, trk: tracking, trackingUrl, empresaNome });
+    // ── Nota de Compra ──────────────────────────────────────────
+    if (tipo === 'nota' || tipo === 'ambos') {
+      const htmlNota = buildNotaHtml({ order, cust, addr, cfg });
 
-      if (resendApiKey) {
+      if (!resendApiKey || resendApiKey === 'mock-resend-key') {
+        console.log(`[TESTE NOTA MOCK] Para: ${toEmail}, Pedido: #${order.numero_pedido}`);
+        results.push({ tipo: 'nota', sucesso: true });
+      } else {
         const r = await fetch('https://api.resend.com/emails', {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
+          headers: { Authorization: `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             from: fromEmail,
-            to: customer.email,
-            subject: `Pedido #${order.numero_pedido} — Código de Rastreio`,
-            html: htmlRastreio,
-          }),
-        });
-        
-        if (!r.ok) {
-          const rData = await r.json().catch(() => ({}));
-          throw new Error(rData.message || 'Falha ao comunicar com a API do Resend.');
-        }
-      }
-
-      // Sincronizar Shopify Fulfillment imediatamente
-      if (order.shopify_order_id) {
-        try {
-          const rawPayload = (order as any).raw_payload || {};
-          const shippingLines = rawPayload.shipping_lines || [];
-          const shippingMethod = shippingLines[0]?.title || null;
-          shopifyFulfilled = await enviarRastreioShopify(Number(order.shopify_order_id), tracking.codigo_rastreio, shippingMethod);
-        } catch (shopifyErr: any) {
-          console.error('Erro ao sincronizar fulfillment com a Shopify:', shopifyErr);
-        }
-      }
-
-      // Atualizar status no banco
-      if (tracking.id) {
-        await supabaseAdmin.from('trackings').update({
-          email_enviado: true,
-          email_enviado_em: new Date().toISOString(),
-          shopify_synced: shopifyFulfilled,
-        }).eq('id', tracking.id);
-      }
-    };
-
-    // Função interna para enviar e-mail de nota de compra
-    const enviarEmailNota = async () => {
-      const htmlNota = buildNotaHtml({ order, cust: customer, addr: address, cfg });
-
-      if (resendApiKey) {
-        const r = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            from: fromEmail,
-            to: customer.email,
-            subject: `Comprovante de Compra — Pedido #${order.numero_pedido}`,
+            to: toEmail,
+            subject: `[TESTE] Comprovante de Compra — Pedido #${order.numero_pedido}`,
             html: htmlNota,
           }),
         });
-        
+        const rData = await r.json();
         if (!r.ok) {
-          const rData = await r.json().catch(() => ({}));
-          throw new Error(rData.message || 'Falha ao comunicar com a API do Resend.');
+          results.push({ tipo: 'nota', sucesso: false, erro: rData.message || JSON.stringify(rData) });
+        } else {
+          results.push({ tipo: 'nota', sucesso: true });
         }
       }
+    }
 
-      // Gravar flag de nota enviada no pedido
-      await supabaseAdmin.from('orders').update({
-        raw_payload: {
-          ...(order as any).raw_payload,
-          nota_enviada: true,
-          nota_enviada_em: new Date().toISOString(),
+    // ── Rastreio ────────────────────────────────────────────────
+    if (tipo === 'rastreio' || tipo === 'ambos') {
+      if (!trk?.codigo_rastreio) {
+        results.push({ tipo: 'rastreio', sucesso: false, erro: 'Pedido sem código de rastreio.' });
+      } else {
+        const trackingUrl = `${appUrl}/rastreio/${trk.codigo_rastreio}`;
+        const htmlRastreio = buildRastreioHtml({ order, cust, trk, trackingUrl, empresaNome });
+
+        if (!resendApiKey || resendApiKey === 'mock-resend-key') {
+          console.log(`[TESTE RASTREIO MOCK] Para: ${toEmail}, Código: ${trk.codigo_rastreio}`);
+          results.push({ tipo: 'rastreio', sucesso: true });
+        } else {
+          const r = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              from: fromEmail,
+              to: toEmail,
+              subject: `[TESTE] Pedido #${order.numero_pedido} — Código de Rastreio`,
+              html: htmlRastreio,
+            }),
+          });
+          const rData = await r.json();
+          if (!r.ok) {
+            results.push({ tipo: 'rastreio', sucesso: false, erro: rData.message || JSON.stringify(rData) });
+          } else {
+            results.push({ tipo: 'rastreio', sucesso: true });
+          }
         }
-      }).eq('id', order.id);
-    };
-
-    // Executar os envios de forma resiliente
-    if (tipo === 'rastreio') {
-      try {
-        await enviarEmailRastreio();
-        statusRastreio.sucesso = true;
-      } catch (err: any) {
-        statusRastreio.erro = err.message || 'Erro desconhecido';
       }
-    } else if (tipo === 'nota') {
-      try {
-        await enviarEmailNota();
-        statusNota.sucesso = true;
-      } catch (err: any) {
-        statusNota.erro = err.message || 'Erro desconhecido';
-      }
-    } else if (tipo === 'ambos') {
-      // Execução paralela resiliente
-      const promessas = [];
-      
-      promessas.push(
-        enviarEmailRastreio()
-          .then(() => { statusRastreio.sucesso = true; })
-          .catch((err) => { statusRastreio.erro = err.message || 'Erro desconhecido'; })
-      );
-
-      promessas.push(
-        enviarEmailNota()
-          .then(() => { statusNota.sucesso = true; })
-          .catch((err) => { statusNota.erro = err.message || 'Erro desconhecido'; })
-      );
-
-      await Promise.all(promessas);
     }
 
-    // Determinar sucesso geral da requisição
-    const sucessoGeral = tipo === 'rastreio' ? statusRastreio.sucesso 
-                       : tipo === 'nota' ? statusNota.sucesso 
-                       : (statusRastreio.sucesso || statusNota.sucesso);
-
-    const erroGeral = [statusRastreio.erro, statusNota.erro].filter(Boolean).join(' | ');
-
-    if (!sucessoGeral) {
-      return NextResponse.json({
-        error: erroGeral || 'Todos os envios falharam.',
-        statusRastreio,
-        statusNota
-      }, { status: 400 });
-    }
-
+    const todosOk = results.every(r => r.sucesso);
     return NextResponse.json({
-      success: true,
-      tipo,
-      statusRastreio,
-      statusNota,
-      shopifyFulfilled,
-      message: 'Operação de notificação concluída.',
+      success: todosOk,
+      results,
+      emailDestino: toEmail,
+      numeroPedido: order.numero_pedido,
+      modoMock: !resendApiKey || resendApiKey === 'mock-resend-key',
     });
+
   } catch (err: any) {
-    console.error('Erro técnico ao enviar notificação:', err);
-    return NextResponse.json({ error: err.message || 'Erro interno do servidor.' }, { status: 500 });
+    console.error('[TESTE EMAIL] Erro:', err);
+    return NextResponse.json({ error: err.message || 'Erro interno.' }, { status: 500 });
   }
 }
 
-// ── Templates HTML ─────────────────────────────────────────────────
+// ── Templates ──────────────────────────────────────────────────────
 function buildNotaHtml({ order, cust, addr, cfg }: any) {
   const empresaNome = cfg['EMPRESA_NOME'] || 'Nossa Loja';
   const empresaCnpj = cfg['EMPRESA_CNPJ'] || '00.000.000/0001-00';
@@ -278,7 +176,7 @@ function buildNotaHtml({ order, cust, addr, cfg }: any) {
       <tr>
         <td>
           <h1>COMPROVANTE DE VENDA</h1>
-          <p>Pedido #${order.numero_pedido} &bull; ${dataPedido}</p>
+          <p>Pedido #${order.numero_pedido} &bull; ${dataPedido} &bull; [TESTE]</p>
         </td>
         <td align="right" style="font-size:14px; font-weight:bold; color:#38bdf8;">
           NÃO POSSUI VALOR FISCAL
@@ -372,7 +270,7 @@ function buildRastreioHtml({ order, cust, trk, trackingUrl, empresaNome }: any) 
   <tr><td style="padding:32px;">
     <p style="color:#94a3b8;font-size:14px;margin:0 0 8px;">Olá, <strong style="color:#f1f5f9;">${firstName}</strong> 👋</p>
     <h1 style="color:#f1f5f9;font-size:24px;margin:0 0 8px;">Seu pedido está a caminho! 📦</h1>
-    <p style="color:#64748b;font-size:13px;margin:0 0 28px;">Pedido <strong style="color:#94a3b8;">#${order.numero_pedido}</strong></p>
+    <p style="color:#64748b;font-size:13px;margin:0 0 28px;">Pedido <strong style="color:#94a3b8;">#${order.numero_pedido}</strong> [TESTE]</p>
     <div style="background:#0f172a;border-radius:12px;border:1px solid #334155;padding:18px 22px;margin-bottom:24px;">
       <p style="color:#64748b;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Código de Rastreio</p>
       <p style="color:#818cf8;font-size:22px;font-weight:800;font-family:'Courier New',monospace;margin:0;letter-spacing:2px;">${trk.codigo_rastreio}</p>
@@ -386,7 +284,7 @@ function buildRastreioHtml({ order, cust, trk, trackingUrl, empresaNome }: any) 
     </table>
   </td></tr>
   <tr><td style="padding:16px 32px;text-align:center;">
-    <p style="color:#475569;font-size:11px;margin:0;">${empresaNome} · E-mail enviado por Rastreio.IO</p>
+    <p style="color:#475569;font-size:11px;margin:0;">${empresaNome} · E-mail de teste</p>
   </td></tr>
 </table>
 </td></tr></table>

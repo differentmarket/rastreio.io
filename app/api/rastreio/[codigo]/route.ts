@@ -18,8 +18,28 @@ function ajustarParaHorarioComercial(date: Date): Date {
   } else if (dayOfWeek === 6) { // Sábado -> segunda
     adjusted.setDate(adjusted.getDate() + 2);
   }
-  
   return adjusted;
+}
+
+function sanitizeHistory(events: any[]) {
+  if (!Array.isArray(events)) return [];
+  return events.map((ev: any) => {
+    let descricao = ev.descricao || '';
+    let local = ev.local || '';
+
+    if (descricao.includes('Shopify') || descricao.includes('sincronizado') || descricao === 'Pedido recebido no sistema e aguardando postagem.') {
+      descricao = 'Pedido confirmado e em preparação para envio.';
+    }
+    if (local === 'Logística Interna' || local === 'Shopify') {
+      local = 'Centro de Distribuição';
+    }
+
+    return {
+      ...ev,
+      descricao,
+      local,
+    };
+  });
 }
 
 export async function GET(
@@ -83,10 +103,10 @@ export async function GET(
       return NextResponse.json({ error: 'Código de rastreio não encontrado.' }, { status: 404 });
     }
 
-    // Busca o rastreamento com data de criação do pedido para calcular a jornada simulada
+    // Busca o rastreamento com dados do pedido, cliente e loja
     const { data: tracking, error } = await supabaseAdmin
       .from('trackings')
-      .select('codigo_rastreio, status, historico, updated_at, created_at, orders ( created_at )')
+      .select('codigo_rastreio, status, historico, updated_at, created_at, store_id, orders ( id, numero_pedido, created_at, valor_total, customer_id, store_id )')
       .eq('codigo_rastreio', codigo.toUpperCase().trim())
       .maybeSingle();
 
@@ -105,28 +125,102 @@ export async function GET(
       );
     }
 
-    // Carrega os dias de delay das configurações
-    const { data: dbSettings } = await supabaseAdmin.from('settings').select('key, value');
-    let delayPostado = 2;
-    let delayTransito = 3;
-    let delaySaiuEntrega = 1;
-    dbSettings?.forEach(s => {
-      if (s.key === 'DELAY_POSTADO_EM_TRANSITO') delayPostado = parseInt(s.value) || 2;
-      if (s.key === 'DELAY_EM_TRANSITO_SAIU_ENTREGA') delayTransito = parseInt(s.value) || 3;
-      if (s.key === 'DELAY_SAIU_ENTREGA_ENTREGUE') delaySaiuEntrega = parseInt(s.value) || 1;
-    });
+    // Buscar dados de White-Label da Loja
+    let storeCustomization = null;
+    const targetStoreId = tracking.store_id || (tracking.orders as any)?.store_id;
+    if (targetStoreId) {
+      const { data: store } = await supabaseAdmin
+        .from('stores')
+        .select('nome_loja, logo_url, primary_color, banner_url, banner_link, whatsapp_suporte')
+        .eq('id', targetStoreId)
+        .maybeSingle();
+      if (store) {
+        storeCustomization = store;
+      }
+    }
 
+    // Buscar dados do cliente associado ao pedido
+    let customerInfo = null;
     const orderData: any = tracking.orders;
+    if (orderData?.customer_id) {
+      const { data: customer } = await supabaseAdmin
+        .from('customers')
+        .select('nome, email, cpf_encrypted')
+        .eq('id', orderData.customer_id)
+        .maybeSingle();
+      
+      if (customer) {
+        let cpfDescriptografado = '';
+        if (customer.cpf_encrypted) {
+          try {
+            // Conversão de bytea do Postgres para Buffer
+            let bufferCpf: Buffer;
+            if (typeof customer.cpf_encrypted === 'string') {
+              // Remove o prefixo '\x' do bytea retornado pelo PostgREST se presente
+              const hex = customer.cpf_encrypted.startsWith('\\x') 
+                ? customer.cpf_encrypted.substring(2) 
+                : customer.cpf_encrypted;
+              bufferCpf = Buffer.from(hex, 'hex');
+            } else {
+              bufferCpf = Buffer.from(customer.cpf_encrypted);
+            }
+            
+            const { descriptografar } = require('@/lib/criptografia');
+            cpfDescriptografado = descriptografar(bufferCpf);
+          } catch (errDec) {
+            console.error('Erro ao descriptografar CPF do cliente:', errDec);
+          }
+        }
+
+        // Ocultar alguns dígitos do CPF (Ex: 123.***.***-00)
+        let cpfMascarado = 'Não informado';
+        if (cpfDescriptografado) {
+          const cpfLimpo = cpfDescriptografado.replace(/\D/g, '');
+          if (cpfLimpo.length === 11) {
+            cpfMascarado = `${cpfLimpo.substring(0, 3)}.***.***-${cpfLimpo.substring(9, 11)}`;
+          } else {
+            cpfMascarado = '***.***.***-**';
+          }
+        }
+        customerInfo = {
+          nome: customer.nome,
+          email: customer.email,
+          cpf: cpfMascarado,
+        };
+      }
+    }
+
+    // Carrega as configurações dinâmicas
+    const { data: dbSettings } = await supabaseAdmin.from('settings').select('key, value');
+    const cfg: Record<string, string> = {};
+    dbSettings?.forEach(s => { cfg[s.key] = s.value; });
+
+    const delayPostado = parseInt(cfg['DELAY_POSTADO_EM_TRANSITO'] || '2', 10);
+    const delayTransito = parseInt(cfg['DELAY_EM_TRANSITO_SAIU_ENTREGA'] || '3', 10);
+    const delaySaiuEntrega = parseInt(cfg['DELAY_SAIU_ENTREGA_ENTREGUE'] || '1', 10);
+
+    const taxaEnabled = cfg['TAXA_ENABLED'] !== 'false';
+    const taxaDiaExibicao = parseInt(cfg['TAXA_DIA_EXIBICAO'] || '11', 10);
+    const taxaNome = cfg['TAXA_NOME'] || 'Taxa de Despacho Postal e Liberação Alfandegária';
+    const taxaValor = cfg['TAXA_VALOR'] || '27.90';
+    const taxaLink = cfg['TAXA_LINK_PAGAMENTO'] || '';
+
+    const upsellEnabled = cfg['UPSELL_ENABLED'] === 'true';
+    const upsellTitle = cfg['UPSELL_TITLE'] || 'Ganhe 15% OFF na sua próxima compra!';
+    const upsellDescription = cfg['UPSELL_DESCRIPTION'] || 'Use o cupom CLIENTE15 no checkout e aproveite frete grátis.';
+    const upsellLink = cfg['UPSELL_LINK'] || '';
+    const upsellImageUrl = cfg['UPSELL_IMAGE_URL'] || '';
+
     const orderCreatedAtStr = orderData?.created_at || tracking.created_at;
     const history = Array.isArray(tracking.historico) ? tracking.historico : [];
     let status = tracking.status;
 
-    // Se o histórico contém apenas a postagem inicial, fazemos a simulação da jornada
-    if (history.length <= 1 && orderCreatedAtStr && status !== 'extraviado') {
-      const orderCreatedAt = new Date(orderCreatedAtStr);
-      const timeDiffMs = Date.now() - orderCreatedAt.getTime();
-      const daysDiff = timeDiffMs / (1000 * 60 * 60 * 24);
+    const orderCreatedAt = orderCreatedAtStr ? new Date(orderCreatedAtStr) : new Date(tracking.created_at);
+    const timeDiffMs = Date.now() - orderCreatedAt.getTime();
+    const daysDiff = timeDiffMs / (1000 * 60 * 60 * 24);
 
+    // Se o histórico contém apenas a postagem inicial, fazemos a simulação da jornada inteligente
+    if (history.length <= 1 && orderCreatedAtStr && status !== 'extraviado') {
       const simulatedHistory = [...history];
 
       // 1. Postado
@@ -134,12 +228,12 @@ export async function GET(
         simulatedHistory.push({
           status: 'postado',
           data: orderCreatedAt.toISOString(),
-          descricao: 'Pedido recebido no sistema e aguardando postagem.',
-          local: 'Logística Interna'
+          descricao: 'Pedido confirmado e em preparação para envio.',
+          local: 'Centro de Distribuição'
         });
       }
 
-      // 1.1 Atualização extra no mesmo dia da postagem (ou 0.5 dia depois)
+      // 1.1 Atualização extra no mesmo dia da postagem
       const postadoExtraDate = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + 0.5 * 24 * 60 * 60 * 1000));
       if (daysDiff >= 0.5 && postadoExtraDate.getTime() <= Date.now()) {
         simulatedHistory.push({
@@ -173,7 +267,7 @@ export async function GET(
         status = 'em_transito';
       }
 
-      // 2.1 Em Trânsito - Segunda atualização no mesmo dia de trânsito (0.5 dia após a chegada na unidade de tratamento)
+      // 2.1 Em Trânsito - Segunda atualização
       const transitoChegadaDate = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + (delayPostado + 0.5) * 24 * 60 * 60 * 1000));
       if (daysDiff >= (delayPostado + 0.5) && transitoChegadaDate.getTime() <= Date.now()) {
         simulatedHistory.push({
@@ -184,7 +278,7 @@ export async function GET(
         });
       }
 
-      // 2.2 Em Trânsito - Encaminhado para a unidade de distribuição local (1.5 dias após entrar em trânsito)
+      // 2.2 Encaminhado para a unidade de distribuição local
       const transitoLocalDate = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + (delayPostado + 1.5) * 24 * 60 * 60 * 1000));
       if (daysDiff >= (delayPostado + 1.5) && transitoLocalDate.getTime() <= Date.now()) {
         simulatedHistory.push({
@@ -207,31 +301,100 @@ export async function GET(
         status = 'saiu_para_entrega';
       }
 
-      // 4. Entregue
-      const entregueDate = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + (delayPostado + delayTransito + delaySaiuEntrega) * 24 * 60 * 60 * 1000));
-      if (daysDiff >= (delayPostado + delayTransito + delaySaiuEntrega) && entregueDate.getTime() <= Date.now()) {
-        simulatedHistory.push({
-          status: 'entregue',
-          data: entregueDate.toISOString(),
-          descricao: 'Objeto entregue ao destinatário',
-          local: 'Curitiba - PR'
-        });
-        status = 'entregue';
+      // 4. Retentativas de Entrega nos dias 9, 10 e 11 se a taxa estiver ativada
+      if (taxaEnabled) {
+        // Dia 9: 1ª tentativa
+        const dia9Date = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + 9.0 * 24 * 60 * 60 * 1000));
+        if (daysDiff >= 9.0 && dia9Date.getTime() <= Date.now()) {
+          simulatedHistory.push({
+            status: 'saiu_para_entrega',
+            data: dia9Date.toISOString(),
+            descricao: '1ª tentativa de entrega não atendida - Carteiro não atendido.',
+            local: 'CDD Distribuição Local'
+          });
+        }
+
+        // Dia 10: 2ª tentativa
+        const dia10Date = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + 10.0 * 24 * 60 * 60 * 1000));
+        if (daysDiff >= 10.0 && dia10Date.getTime() <= Date.now()) {
+          simulatedHistory.push({
+            status: 'saiu_para_entrega',
+            data: dia10Date.toISOString(),
+            descricao: '2ª tentativa de entrega não atendida - Destinatário ausente.',
+            local: 'CDD Distribuição Local'
+          });
+        }
+
+        // Dia 11: 3ª tentativa & Pendente de Taxa
+        const dia11Date = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + 11.0 * 24 * 60 * 60 * 1000));
+        if (daysDiff >= 11.0 && dia11Date.getTime() <= Date.now()) {
+          simulatedHistory.push({
+            status: 'pendente_taxa',
+            data: dia11Date.toISOString(),
+            descricao: '3ª tentativa de entrega não atendida. Objeto retido - Pendente de pagamento de taxa para liberação do reenvio.',
+            local: 'Central de Distribuição dos Correios / Alfândega'
+          });
+          status = 'pendente_taxa';
+        }
+      } else {
+        // Se a taxa não estiver ativada, segue o fluxo normal para Entregue
+        const entregueDate = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + (delayPostado + delayTransito + delaySaiuEntrega) * 24 * 60 * 60 * 1000));
+        if (daysDiff >= (delayPostado + delayTransito + delaySaiuEntrega) && entregueDate.getTime() <= Date.now()) {
+          simulatedHistory.push({
+            status: 'entregue',
+            data: entregueDate.toISOString(),
+            descricao: 'Objeto entregue ao destinatário',
+            local: 'Curitiba - PR'
+          });
+          status = 'entregue';
+        }
       }
 
       return NextResponse.json({
         codigo: tracking.codigo_rastreio,
         status,
-        historico: simulatedHistory,
+        historico: sanitizeHistory(simulatedHistory),
         atualizado_em: tracking.updated_at,
+        customer: customerInfo,
+        numero_pedido: orderData?.numero_pedido || null,
+        store: storeCustomization,
+        taxa_info: {
+          exibir: taxaEnabled && daysDiff >= taxaDiaExibicao,
+          nome: taxaNome,
+          valor: taxaValor,
+          link: taxaLink,
+        },
+        upsell_info: {
+          ativo: upsellEnabled,
+          titulo: upsellTitle,
+          descricao: upsellDescription,
+          link: upsellLink,
+          imagem_url: upsellImageUrl,
+        },
       });
     }
 
     return NextResponse.json({
       codigo: tracking.codigo_rastreio,
       status: tracking.status,
-      historico: tracking.historico,
+      historico: sanitizeHistory(tracking.historico),
       atualizado_em: tracking.updated_at,
+      customer: customerInfo,
+      numero_pedido: orderData?.numero_pedido || null,
+      store: storeCustomization,
+      taxa_info: {
+        exibir: taxaEnabled && daysDiff >= taxaDiaExibicao,
+        nome: taxaNome,
+        valor: taxaValor,
+        link: taxaLink,
+      },
+      upsell_info: {
+        ativo: upsellEnabled,
+        titulo: upsellTitle,
+        descricao: upsellDescription,
+        link: upsellLink,
+        imagem_url: upsellImageUrl,
+      },
     });
   } catch (err: any) {
     console.error('Erro na consulta de rastreamento:', err);

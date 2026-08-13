@@ -24,8 +24,42 @@ export interface Address {
   created_at?: string;
 }
 
+export interface Store {
+  id: string;
+  nome_loja: string;
+  shopify_domain: string;
+  shopify_access_token?: string | null;
+  shopify_webhook_secret?: string | null;
+  status: 'ativa' | 'pausada' | 'cancelada';
+  empresa_nome?: string | null;
+  empresa_cnpj?: string | null;
+  empresa_endereco?: string | null;
+  empresa_cidade?: string | null;
+  empresa_estado?: string | null;
+  logo_url?: string | null;
+  primary_color?: string | null;
+  banner_url?: string | null;
+  banner_link?: string | null;
+  whatsapp_suporte?: string | null;
+  evolution_api_url?: string | null;
+  evolution_api_key?: string | null;
+  evolution_instance_name?: string | null;
+  whatsapp_enabled?: boolean;
+  ai_recovery_enabled?: boolean;
+  openai_api_key?: string | null;
+  ai_prompt_custom?: string | null;
+  ai_model?: string | null;
+  ai_tone?: string | null;
+  ai_temperature?: number | null;
+  ai_coupon_code?: string | null;
+  ai_delay_days?: number | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface Order {
   id: string;
+  store_id?: string | null;
   shopify_order_id: number;
   customer_id: string | null;
   address_id: string | null;
@@ -47,6 +81,7 @@ export interface TrackingEvent {
 
 export interface Tracking {
   id: string;
+  store_id?: string | null;
   order_id: string;
   codigo_rastreio: string;
   status: 'postado' | 'em_transito' | 'saiu_para_entrega' | 'entregue' | 'extraviado';

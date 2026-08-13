@@ -58,12 +58,14 @@ export async function GET(req: NextRequest) {
       RESEND_API_KEY: '',
       RESEND_FROM_EMAIL: '',
       NEXT_PUBLIC_APP_URL: '',
+      NOTA_DELAY_HORAS: '2',
+      RASTREIO_PROXIMO_DIA_UTIL: 'true',
+      AUTOMACAO_ATIVA: 'false',
     };
 
     settings?.forEach((item) => {
-      if (item.key in config) {
-        config[item.key] = item.value;
-      }
+      // Aceitar qualquer chave do banco, não só as do config inicial
+      config[item.key] = item.value;
     });
 
     return NextResponse.json(config);
@@ -96,6 +98,9 @@ export async function POST(req: NextRequest) {
       RESEND_API_KEY,
       RESEND_FROM_EMAIL,
       NEXT_PUBLIC_APP_URL,
+      NOTA_DELAY_HORAS,
+      RASTREIO_PROXIMO_DIA_UTIL,
+      AUTOMACAO_ATIVA,
     } = body;
 
     // Bypass mock em ambiente local (apenas simula sucesso)
@@ -104,32 +109,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    const updates = [
-      { key: 'SHOPIFY_STORE_DOMAIN', value: SHOPIFY_STORE_DOMAIN || '' },
-      { key: 'SHOPIFY_ADMIN_TOKEN', value: SHOPIFY_ADMIN_TOKEN || '' },
-      { key: 'SHOPIFY_WEBHOOK_SECRET', value: SHOPIFY_WEBHOOK_SECRET || '' },
-      { key: 'DELAY_POSTADO_EM_TRANSITO', value: String(DELAY_POSTADO_EM_TRANSITO ?? '2') },
-      { key: 'DELAY_EM_TRANSITO_SAIU_ENTREGA', value: String(DELAY_EM_TRANSITO_SAIU_ENTREGA ?? '3') },
-      { key: 'DELAY_SAIU_ENTREGA_ENTREGUE', value: String(DELAY_SAIU_ENTREGA_ENTREGUE ?? '1') },
-      { key: 'EMPRESA_NOME', value: EMPRESA_NOME || '' },
-      { key: 'EMPRESA_CNPJ', value: EMPRESA_CNPJ || '' },
-      { key: 'EMPRESA_ENDERECO', value: EMPRESA_ENDERECO || '' },
-      { key: 'EMPRESA_CIDADE', value: EMPRESA_CIDADE || '' },
-      { key: 'EMPRESA_ESTADO', value: EMPRESA_ESTADO || '' },
-      { key: 'EMPRESA_CEP', value: EMPRESA_CEP || '' },
-      { key: 'RESEND_API_KEY', value: RESEND_API_KEY || '' },
-      { key: 'RESEND_FROM_EMAIL', value: RESEND_FROM_EMAIL || '' },
-      { key: 'NEXT_PUBLIC_APP_URL', value: NEXT_PUBLIC_APP_URL || '' },
-    ];
-
-    for (const item of updates) {
+    // Salva todas as chaves enviadas no body
+    for (const [key, val] of Object.entries(body)) {
       const { error } = await supabaseAdmin
         .from('settings')
-        .upsert({ key: item.key, value: item.value }, { onConflict: 'key' });
+        .upsert({ key, value: String(val ?? '') }, { onConflict: 'key' });
 
       if (error) {
-        console.error(`Erro ao salvar configuração ${item.key}:`, error);
-        return NextResponse.json({ error: `Erro ao salvar ${item.key}.` }, { status: 500 });
+        console.error(`Erro ao salvar configuração ${key}:`, error);
+        return NextResponse.json({ error: `Erro ao salvar ${key}.` }, { status: 500 });
       }
     }
 

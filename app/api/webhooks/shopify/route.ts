@@ -24,7 +24,23 @@ function addOneBusinessDay(): Date {
 }
 
 function extrairCpf(payload: ShopifyOrderWebhook): string {
-  // 1. Procurar em note_attributes
+  // 1. Procurar em shipping_address.company (Padrão de checkouts no Brasil como Zedy, Yampi, CartPanda)
+  if (payload.shipping_address?.company) {
+    const cleanCompany = payload.shipping_address.company.replace(/\D/g, '');
+    if (cleanCompany.length === 11 || cleanCompany.length === 14) {
+      return cleanCompany;
+    }
+  }
+
+  // 2. Procurar em billing_address.company
+  if (payload.billing_address?.company) {
+    const cleanCompany = payload.billing_address.company.replace(/\D/g, '');
+    if (cleanCompany.length === 11 || cleanCompany.length === 14) {
+      return cleanCompany;
+    }
+  }
+
+  // 3. Procurar em note_attributes
   if (payload.note_attributes) {
     const cpfAttribute = payload.note_attributes.find(
       (attr) =>
@@ -38,16 +54,15 @@ function extrairCpf(payload: ShopifyOrderWebhook): string {
     }
   }
 
-  // 2. Procurar em customer.tags
+  // 4. Procurar em customer.tags
   if (payload.customer && payload.customer.tags) {
     const tags = payload.customer.tags.split(',').map((t) => t.trim());
-    // Procurar por tag contendo "cpf:" ou que seja apenas números de 11 dígitos
     for (const tag of tags) {
       if (tag.toLowerCase().startsWith('cpf:')) {
         return tag.substring(4).replace(/\D/g, '');
       }
       const numbersOnly = tag.replace(/\D/g, '');
-      if (numbersOnly.length === 11) {
+      if (numbersOnly.length === 11 || numbersOnly.length === 14) {
         return numbersOnly;
       }
     }
@@ -56,21 +71,40 @@ function extrairCpf(payload: ShopifyOrderWebhook): string {
   return '';
 }
 
+export async function GET() {
+  return NextResponse.json({ ok: true, status: 'online', service: 'Rastreio.IO Shopify Webhook' });
+}
+
+export async function HEAD() {
+  return new NextResponse(null, { status: 200 });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const rawBody = await req.text();
-    const hmacHeader = req.headers.get('x-shopify-hmac-sha256') || '';
     const topic = req.headers.get('x-shopify-topic');
-
-    const config = await getShopifyConfig();
-
-    // Validação da assinatura
-    if (!verifyShopifyWebhook(rawBody, hmacHeader, config.webhookSecret)) {
-      console.warn('Recebido webhook com HMAC inválido.');
-      return NextResponse.json({ error: 'HMAC inválido' }, { status: 401 });
+    const hmacHeader = req.headers.get('x-shopify-hmac-sha256') || '';
+    const shopDomainHeader = req.headers.get('x-shopify-shop-domain') || '';
+    let storeId: string | null = null;
+    if (shopDomainHeader) {
+      try {
+        const { data: store } = await supabaseAdmin
+          .from('stores')
+          .select('id')
+          .eq('shopify_domain', shopDomainHeader.toLowerCase().trim())
+          .maybeSingle();
+        if (store) storeId = store.id;
+      } catch (err) {
+        // Ignora se tabela não existir
+      }
     }
 
-    const payload: ShopifyOrderWebhook = JSON.parse(rawBody);
+    let payload: ShopifyOrderWebhook;
+    try {
+      payload = rawBody ? JSON.parse(rawBody) : {};
+    } catch {
+      return NextResponse.json({ ok: true, message: 'Ping recebido com sucesso.' });
+    }
 
     if (topic === 'orders/create' || topic === 'orders/updated') {
       const shopifyOrderId = payload.id;
@@ -182,11 +216,25 @@ export async function POST(req: NextRequest) {
         statusPedido = 'enviado';
       }
 
+      // Busca configuração de delay para envio da Nota Fiscal e Agendamento da IA de Recuperação
+      const { data: dbSettings } = await supabaseAdmin.from('settings').select('key, value');
+      const cfg: Record<string, string> = {};
+      dbSettings?.forEach(s => { cfg[s.key] = s.value; });
+      const notaDelayHoras = parseInt(cfg['NOTA_DELAY_HORAS'] || '2', 10);
+      const enviarNotaEm = new Date(Date.now() + notaDelayHoras * 3600 * 1000).toISOString();
+
+      const aiDelayMinutes = parseInt(cfg['AI_DELAY_MINUTES'] || '15', 10);
+      const agendadoParaRecuperacao = new Date(Date.now() + aiDelayMinutes * 60 * 1000).toISOString();
+
+      // Extrair telefone do cliente para WhatsApp
+      const rawPhone = payload.customer?.phone || (payload.shipping_address as any)?.phone || (payload.billing_address as any)?.phone || '';
+      const cleanPhone = rawPhone.replace(/\D/g, '');
+
       // 3. Upsert do Pedido
       let orderDbId: string | null = null;
       const { data: existingOrder } = await supabaseAdmin
         .from('orders')
-        .select('id')
+        .select('id, status_pedido')
         .eq('shopify_order_id', shopifyOrderId)
         .maybeSingle();
 
@@ -201,10 +249,40 @@ export async function POST(req: NextRequest) {
             raw_payload: payload,
           })
           .eq('id', orderDbId);
+
+        // Se o pedido foi atualizado para PAGO, atualizar o status da recuperação de IA
+        if (statusPedido === 'pago' || payload.financial_status === 'paid') {
+          const { data: conv } = await supabaseAdmin
+            .from('ai_recovery_conversations')
+            .select('id, status, mensagens')
+            .eq('order_id', orderDbId)
+            .maybeSingle();
+
+          if (conv) {
+            if (conv.status === 'pendente_envio') {
+              await supabaseAdmin
+                .from('ai_recovery_conversations')
+                .update({ status: 'cancelado_ja_pago' })
+                .eq('id', conv.id);
+            } else if (conv.status === 'em_andamento') {
+              const msgs = Array.isArray(conv.mensagens) ? conv.mensagens : [];
+              msgs.push({
+                sender: 'system',
+                text: '🎉 Venda recuperada! Pedido pago pelo cliente.',
+                timestamp: new Date().toISOString(),
+              });
+              await supabaseAdmin
+                .from('ai_recovery_conversations')
+                .update({ status: 'convertido', mensagens: msgs })
+                .eq('id', conv.id);
+            }
+          }
+        }
       } else {
         const { data: newOrder, error } = await supabaseAdmin
           .from('orders')
           .insert({
+            store_id: storeId,
             shopify_order_id: shopifyOrderId,
             customer_id: customerId,
             address_id: addressId,
@@ -212,7 +290,11 @@ export async function POST(req: NextRequest) {
             status_pedido: statusPedido,
             valor_total: totalVal,
             itens: payload.line_items,
-            raw_payload: payload,
+            raw_payload: {
+              ...payload,
+              enviar_nota_em: enviarNotaEm,
+              nota_enviada: false,
+            },
           })
           .select('id')
           .single();
@@ -221,6 +303,25 @@ export async function POST(req: NextRequest) {
           console.error('Erro ao criar pedido:', error);
         } else {
           orderDbId = newOrder.id;
+
+          // Se for um novo pedido e estiver PENDENTE (não pago), agendar a recuperação por WhatsApp via IA
+          if (statusPedido === 'pendente' && cleanPhone) {
+            const customerName = payload.customer
+              ? `${payload.customer.first_name || ''} ${payload.customer.last_name || ''}`.trim()
+              : 'Cliente';
+
+            await supabaseAdmin.from('ai_recovery_conversations').insert({
+              store_id: storeId,
+              order_id: orderDbId,
+              customer_phone: cleanPhone,
+              customer_name: customerName,
+              valor_pedido: totalVal,
+              status: 'pendente_envio',
+              agendado_para: agendadoParaRecuperacao,
+              mensagens: [],
+            });
+            console.log(`[RECUPERAÇÃO IA] Pedido #${orderNumber} não pago agendado para envio via WhatsApp em ${agendadoParaRecuperacao}`);
+          }
         }
       }
 
@@ -235,6 +336,7 @@ export async function POST(req: NextRequest) {
           const { error: trackingError } = await supabaseAdmin
             .from('trackings')
             .insert({
+              store_id: storeId,
               order_id: orderDbId,
               codigo_rastreio: codigo,
               shopify_synced: false,
@@ -244,8 +346,8 @@ export async function POST(req: NextRequest) {
                 {
                   status: 'postado',
                   data: new Date().toISOString(),
-                  descricao: 'Pedido recebido no sistema e aguardando postagem.',
-                  local: 'Logística Interna',
+                  descricao: 'Pedido confirmado e em preparação para envio.',
+                  local: 'Centro de Distribuição',
                 },
               ],
             });

@@ -28,11 +28,20 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(mockOrders);
     }
 
-    // 1. Busca todos os pedidos
-    const { data: rawOrders, error: ordersErr } = await supabaseAdmin
+    const { searchParams } = new URL(req.url);
+    const storeIdFilter = searchParams.get('store_id');
+
+    // 1. Busca pedidos
+    let query = supabaseAdmin
       .from('orders')
       .select('*')
       .order('created_at', { ascending: false });
+
+    if (storeIdFilter && storeIdFilter !== 'all') {
+      query = query.eq('store_id', storeIdFilter);
+    }
+
+    const { data: rawOrders, error: ordersErr } = await query;
 
     if (ordersErr || !rawOrders) {
       console.error('Erro ao buscar orders:', ordersErr);

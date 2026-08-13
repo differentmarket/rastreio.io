@@ -42,7 +42,10 @@ export async function POST(
         return NextResponse.json({ error: 'Pedido não encontrado.' }, { status: 404 });
       }
 
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      let baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://rastreio-io.vercel.app').trim().replace(/\/+$/, '').replace(/\/rastreio$/, '');
+      if (!baseUrl || baseUrl.includes('localhost') || baseUrl.includes('ri7o2sjad')) {
+        baseUrl = 'https://rastreio-io.vercel.app';
+      }
       const trackingUrl = `${baseUrl}/rastreio/${mock.codigoRastreio}`;
 
       // 1. Envia o e-mail
@@ -98,7 +101,10 @@ export async function POST(
       return NextResponse.json({ error: 'Pedido sem código de rastreio cadastrado.' }, { status: 422 });
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    let baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://rastreio-io.vercel.app').trim().replace(/\/+$/, '').replace(/\/rastreio$/, '');
+    if (!baseUrl || baseUrl.includes('localhost') || baseUrl.includes('ri7o2sjad')) {
+      baseUrl = 'https://rastreio-io.vercel.app';
+    }
     const trackingUrl = `${baseUrl}/rastreio/${tracking.codigo_rastreio}`;
 
     // 1. Envia o e-mail via Resend

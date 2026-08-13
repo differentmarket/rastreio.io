@@ -6,7 +6,8 @@ import {
   Package, Search, Shield, LogOut, ChevronRight, Loader2, Calendar,
   MapPin, User, FileText, CheckCircle, RefreshCw, PlusCircle, ArrowLeft, Clock,
   Send, CheckCheck, Mail, AlertTriangle, ShoppingBag, Download, Inbox,
-  RotateCcw, Store, Zap, ArrowRight, ExternalLink, CheckCircle2, XCircle,
+  RotateCcw, Store, Zap, ArrowRight, ExternalLink, CheckCircle2, XCircle, Building2, Users, Globe,
+  BarChart3, Bot, Sparkles, MessageSquare, Palette, Pencil, Trash2, X,
 } from 'lucide-react';
 
 // ─────────────── Types ───────────────
@@ -102,7 +103,27 @@ export default function AdminPage() {
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'pedidos' | 'fila' | 'settings'>('pedidos');
+  const [activeTab, setActiveTab] = useState<'pedidos' | 'fila' | 'analytics' | 'ai_agent' | 'settings' | 'members'>('pedidos');
+
+  // White-Label, Evolution API e Agente de IA
+  const [logoUrl, setLogoUrl] = useState('');
+  const [primaryColor, setPrimaryColor] = useState('#4F46E5');
+  const [bannerUrl, setBannerUrl] = useState('');
+  const [bannerLink, setBannerLink] = useState('');
+  const [whatsappSuporte, setWhatsappSuporte] = useState('');
+  const [evolutionApiUrl, setEvolutionApiUrl] = useState('');
+  const [evolutionApiKey, setEvolutionApiKey] = useState('');
+  const [evolutionInstanceName, setEvolutionInstanceName] = useState('');
+  const [whatsappEnabled, setWhatsappEnabled] = useState(false);
+  const [aiRecoveryEnabled, setAiRecoveryEnabled] = useState(false);
+  const [openaiApiKey, setOpenaiApiKey] = useState('');
+  const [aiPromptCustom, setAiPromptCustom] = useState('');
+  const [aiModel, setAiModel] = useState('gpt-4o-mini');
+  const [aiTone, setAiTone] = useState('amigavel');
+  const [aiTemperature, setAiTemperature] = useState(0.7);
+  const [aiCouponCode, setAiCouponCode] = useState('');
+  const [aiConversations, setAiConversations] = useState<any[]>([]);
+  const [loadingAiConversations, setLoadingAiConversations] = useState(false);
 
   // Pedidos
   const [orders, setOrders] = useState<OrderList[]>([]);
@@ -110,6 +131,28 @@ export default function AdminPage() {
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // SaaS Multi-Tenant Stores
+  const [stores, setStores] = useState<any[]>([]);
+  const [activeStore, setActiveStore] = useState<any | null>(null);
+  const [selectedStoreId, setSelectedStoreId] = useState<string>('all');
+  const [loadingStores, setLoadingStores] = useState(false);
+  const [newStoreModalOpen, setNewStoreModalOpen] = useState(false);
+  const [newStoreDomain, setNewStoreDomain] = useState('');
+  const [newStoreToken, setNewStoreToken] = useState('');
+  const [newStoreNome, setNewStoreNome] = useState('');
+  const [newStoreCnpj, setNewStoreCnpj] = useState('');
+  const [newStoreSuccess, setNewStoreSuccess] = useState(false);
+  const [newStoreError, setNewStoreError] = useState<string | null>(null);
+  const [savingStore, setSavingStore] = useState(false);
+
+  // Store Members (Contas de Lojistas)
+  const [storeMembers, setStoreMembers] = useState<any[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [invitingMember, setInvitingMember] = useState(false);
+  const [inviteSuccess, setInviteSuccess] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
 
   // Sync Shopify
   const [syncing, setSyncing] = useState(false);
@@ -119,8 +162,18 @@ export default function AdminPage() {
   const [updateStatus, setUpdateStatus] = useState('em_transito');
   const [updateDesc, setUpdateDesc] = useState('');
   const [updateLocal, setUpdateLocal] = useState('');
+  const [updateDate, setUpdateDate] = useState('');
   const [submittingUpdate, setSubmittingUpdate] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
+
+  // Edit / Delete tracking event
+  const [editingEventIndex, setEditingEventIndex] = useState<number | null>(null);
+  const [editStatus, setEditStatus] = useState('em_transito');
+  const [editDesc, setEditDesc] = useState('');
+  const [editLocal, setEditLocal] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [submittingEdit, setSubmittingEdit] = useState(false);
+  const [deletingIndex, setDeletingIndex] = useState<number | null>(null);
 
   // Email sending
   const [sendingEmail, setSendingEmail] = useState(false);
@@ -153,6 +206,34 @@ export default function AdminPage() {
   const [resendApiKey, setResendApiKey] = useState('');
   const [resendFromEmail, setResendFromEmail] = useState('');
   const [nextPublicAppUrl, setNextPublicAppUrl] = useState('');
+  const [notaDelayHoras, setNotaDelayHoras] = useState('2');
+  
+  // Taxa de Reenvio / Despacho Postal
+  const [taxaEnabled, setTaxaEnabled] = useState(true);
+  const [taxaDiasTentativas, setTaxaDiasTentativas] = useState('9,10,11');
+  const [taxaDiaExibicao, setTaxaDiaExibicao] = useState('11');
+  const [taxaNome, setTaxaNome] = useState('Taxa de Despacho Postal e Liberação Alfandegária');
+  const [taxaValor, setTaxaValor] = useState('27.90');
+  const [taxaLinkPagamento, setTaxaLinkPagamento] = useState('');
+
+  // Upsell & Recompra
+  const [upsellEnabled, setUpsellEnabled] = useState(false);
+  const [upsellTitle, setUpsellTitle] = useState('Ganhe 15% OFF na sua próxima compra!');
+  const [upsellDescription, setUpsellDescription] = useState('Use o cupom CLIENTE15 no checkout e aproveite frete grátis.');
+  const [upsellLink, setUpsellLink] = useState('');
+  const [upsellImageUrl, setUpsellImageUrl] = useState('');
+
+  // Métricas do Agente de IA & Recuperação por WhatsApp
+  const [aiMetrics, setAiMetrics] = useState({
+    total_contatados: 0,
+    total_engajados: 0,
+    total_convertidos: 0,
+    faturamento_recuperado: 0,
+    taxa_conversao: 0,
+  });
+  const [selectedAiConvModal, setSelectedAiConvModal] = useState<any | null>(null);
+  const [aiDelayMinutes, setAiDelayMinutes] = useState('15');
+
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
@@ -169,14 +250,20 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (session) fetchOrders();
-    else { setOrders([]); setSelectedOrder(null); }
+    if (session) {
+      fetchOrders();
+      fetchStores();
+    } else {
+      setOrders([]);
+      setSelectedOrder(null);
+    }
   }, [session]);
 
   useEffect(() => {
     if (session && activeTab === 'settings') fetchSettings();
     if (session && activeTab === 'fila') fetchEmailQueue();
-  }, [session, activeTab]);
+    if (session && activeTab === 'members' && activeStore?.id) fetchStoreMembers(activeStore.id);
+  }, [session, activeTab, activeStore?.id]);
 
   // ── Fetch ──
   const getAuthHeaders = (): Record<string, string> => {
@@ -185,10 +272,137 @@ export default function AdminPage() {
     return { Authorization: `Bearer ${token}` };
   };
 
-  const fetchOrders = async () => {
-    setLoadingOrders(true);
+  const fetchStores = async () => {
+    setLoadingStores(true);
     try {
-      const res = await fetch('/api/pedidos', { headers: getAuthHeaders() });
+      const res = await fetch('/api/stores', { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setStores(data.stores || []);
+      }
+    } catch { /* silent */ } finally {
+      setLoadingStores(false);
+    }
+  };
+
+  const handleAddStore = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingStore(true);
+    setNewStoreError(null);
+    setNewStoreSuccess(false);
+
+    try {
+      const res = await fetch('/api/stores', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          nome_loja: newStoreNome,
+          shopify_domain: newStoreDomain,
+          shopify_access_token: newStoreToken,
+          empresa_cnpj: newStoreCnpj,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao integrar loja.');
+
+      setNewStoreSuccess(true);
+      fetchStores();
+      setTimeout(() => {
+        setNewStoreModalOpen(false);
+        setNewStoreDomain('');
+        setNewStoreToken('');
+        setNewStoreNome('');
+        setNewStoreCnpj('');
+        setNewStoreSuccess(false);
+      }, 1500);
+    } catch (err: any) {
+      setNewStoreError(err.message || 'Erro ao integrar loja.');
+    } finally {
+      setSavingStore(false);
+    }
+  };
+
+  const handleDeleteStore = async (storeId: string) => {
+    if (!confirm('Deseja realmente desconectar esta loja?')) return;
+    try {
+      const res = await fetch(`/api/stores?id=${storeId}`, { method: 'DELETE', headers: getAuthHeaders() });
+      if (res.ok) {
+        fetchStores();
+        if (activeStore?.id === storeId) {
+          setActiveStore(null);
+          setSelectedStoreId('all');
+          fetchOrders('all');
+        }
+      }
+    } catch { /* silent */ }
+  };
+
+  const handleSelectStore = (store: any) => {
+    setActiveStore(store);
+    setSelectedStoreId(store ? store.id : 'all');
+    fetchOrders(store ? store.id : 'all');
+    if (store) {
+      fetchStoreMembers(store.id);
+    }
+  };
+
+  const fetchStoreMembers = async (storeId: string) => {
+    setLoadingMembers(true);
+    try {
+      const res = await fetch(`/api/stores/users?store_id=${storeId}`, { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setStoreMembers(data.users || []);
+      }
+    } catch { /* silent */ } finally {
+      setLoadingMembers(false);
+    }
+  };
+
+  const handleInviteMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeStore || !inviteEmail) return;
+    setInvitingMember(true);
+    setInviteError(null);
+    setInviteSuccess(false);
+
+    try {
+      const res = await fetch('/api/stores/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ store_id: activeStore.id, email: inviteEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao vincular usuário.');
+
+      setInviteSuccess(true);
+      fetchStoreMembers(activeStore.id);
+      setInviteEmail('');
+      setTimeout(() => setInviteSuccess(false), 3000);
+    } catch (err: any) {
+      setInviteError(err.message || 'Erro ao convidar usuário.');
+    } finally {
+      setInvitingMember(false);
+    }
+  };
+
+  const handleRemoveMember = async (bindId: string) => {
+    if (!confirm('Remover acesso deste usuário a esta loja?')) return;
+    try {
+      const res = await fetch(`/api/stores/users?id=${bindId}`, { method: 'DELETE', headers: getAuthHeaders() });
+      if (res.ok && activeStore) {
+        fetchStoreMembers(activeStore.id);
+      }
+    } catch { /* silent */ }
+  };
+
+  const fetchOrders = async (overrideStoreId?: string) => {
+    setLoadingOrders(true);
+    const targetStore = overrideStoreId !== undefined ? overrideStoreId : selectedStoreId;
+    try {
+      const queryParam = targetStore && targetStore !== 'all' ? `?store_id=${targetStore}` : '';
+      const res = await fetch(`/api/pedidos${queryParam}`, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error();
       setOrders(await res.json());
     } catch { /* silent */ } finally {
@@ -246,10 +460,60 @@ export default function AdminPage() {
       setResendApiKey(data.RESEND_API_KEY || '');
       setResendFromEmail(data.RESEND_FROM_EMAIL || '');
       setNextPublicAppUrl(data.NEXT_PUBLIC_APP_URL || '');
+      setNotaDelayHoras(data.NOTA_DELAY_HORAS || '2');
+      
+      setTaxaEnabled(data.TAXA_ENABLED !== 'false');
+      setTaxaDiasTentativas(data.TAXA_DIAS_TENTATIVAS || '9,10,11');
+      setTaxaDiaExibicao(data.TAXA_DIA_EXIBICAO || '11');
+      setTaxaNome(data.TAXA_NOME || 'Taxa de Despacho Postal e Liberação Alfandegária');
+      setTaxaValor(data.TAXA_VALOR || '27.90');
+      setTaxaLinkPagamento(data.TAXA_LINK_PAGAMENTO || '');
+
+      setUpsellEnabled(data.UPSELL_ENABLED === 'true');
+      setUpsellTitle(data.UPSELL_TITLE || 'Ganhe 15% OFF na sua próxima compra!');
+      setUpsellDescription(data.UPSELL_DESCRIPTION || 'Use o cupom CLIENTE15 no checkout e aproveite frete grátis.');
+      setUpsellLink(data.UPSELL_LINK || '');
+      setUpsellImageUrl(data.UPSELL_IMAGE_URL || '');
+
+      if (activeStore) {
+        setLogoUrl(activeStore.logo_url || '');
+        setPrimaryColor(activeStore.primary_color || '#4F46E5');
+        setBannerUrl(activeStore.banner_url || '');
+        setBannerLink(activeStore.banner_link || '');
+        setWhatsappSuporte(activeStore.whatsapp_suporte || '');
+        setEvolutionApiUrl(activeStore.evolution_api_url || '');
+        setEvolutionApiKey(activeStore.evolution_api_key || '');
+        setEvolutionInstanceName(activeStore.evolution_instance_name || '');
+        setWhatsappEnabled(activeStore.whatsapp_enabled || false);
+        setAiRecoveryEnabled(activeStore.ai_recovery_enabled || false);
+        setOpenaiApiKey(activeStore.openai_api_key || '');
+        setAiPromptCustom(activeStore.ai_prompt_custom || '');
+        setAiModel(activeStore.ai_model || 'gpt-4o-mini');
+        setAiTone(activeStore.ai_tone || 'amigavel');
+        setAiTemperature(typeof activeStore.ai_temperature === 'number' ? activeStore.ai_temperature : 0.7);
+        setAiCouponCode(activeStore.ai_coupon_code || '');
+      }
     } catch (err: any) {
       setSettingsError(err.message || 'Erro ao carregar.');
     } finally {
       setLoadingSettings(false);
+    }
+  };
+
+  const fetchAiConversations = async () => {
+    setLoadingAiConversations(true);
+    try {
+      const storeIdParam = activeStore?.id || 'all';
+      const res = await fetch(`/api/ai/conversations?store_id=${storeIdParam}`, { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setAiConversations(data.conversations || []);
+        if (data.metrics) {
+          setAiMetrics(data.metrics);
+        }
+      }
+    } catch { /* silent */ } finally {
+      setLoadingAiConversations(false);
     }
   };
 
@@ -312,7 +576,7 @@ export default function AdminPage() {
     }
   };
 
-  const handleSendBatchEmails = async (periodo: 'hoje' | 'ontem' | 'semana' | 'pendentes' | 'todos') => {
+  const handleSendBatchEmails = async (periodo: 'hoje' | 'ontem' | 'semana' | 'pendentes' | 'todos' | 'exceto_hoje') => {
     setBatchSending(true);
     setBatchResult(null);
     try {
@@ -326,6 +590,7 @@ export default function AdminPage() {
 
       setBatchResult(`✅ ${data.disparados} e-mails enviados com sucesso de ${data.totalAlvo} elegíveis!`);
       fetchOrders();
+      fetchEmailQueue();
     } catch (err: any) {
       setBatchResult(`❌ ${err.message || 'Erro no envio em lote.'}`);
     } finally {
@@ -378,18 +643,86 @@ export default function AdminPage() {
       const res = await fetch(`/api/rastreio/${selectedOrder.trackings.codigo_rastreio}/atualizar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ status: updateStatus, descricao: updateDesc, local: updateLocal }),
+        body: JSON.stringify({
+          action: 'add',
+          status: updateStatus,
+          descricao: updateDesc,
+          local: updateLocal,
+          data: updateDate ? new Date(updateDate).toISOString() : undefined,
+        }),
       });
       if (!res.ok) {
         const d = await res.json();
         throw new Error(d.error || 'Erro ao atualizar.');
       }
+      setUpdateDesc('');
+      setUpdateLocal('');
+      setUpdateDate('');
       await fetchOrderDetail(selectedOrder.id);
       fetchOrders();
     } catch (err: any) {
       setUpdateError(err.message || 'Erro ao enviar atualização.');
     } finally {
       setSubmittingUpdate(false);
+    }
+  };
+
+  const handleEditEventSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedOrder?.trackings?.codigo_rastreio || editingEventIndex === null) return;
+    setSubmittingEdit(true);
+    setUpdateError(null);
+    try {
+      const res = await fetch(`/api/rastreio/${selectedOrder.trackings.codigo_rastreio}/atualizar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          action: 'edit',
+          eventIndex: editingEventIndex,
+          status: editStatus,
+          descricao: editDesc,
+          local: editLocal,
+          data: editDate ? new Date(editDate).toISOString() : undefined,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.error || 'Erro ao editar evento.');
+      }
+      setEditingEventIndex(null);
+      await fetchOrderDetail(selectedOrder.id);
+      fetchOrders();
+    } catch (err: any) {
+      setUpdateError(err.message || 'Erro ao editar evento.');
+    } finally {
+      setSubmittingEdit(false);
+    }
+  };
+
+  const handleDeleteEvent = async (index: number) => {
+    if (!selectedOrder?.trackings?.codigo_rastreio) return;
+    if (!confirm('Tem certeza que deseja excluir este evento do histórico?')) return;
+    setDeletingIndex(index);
+    setUpdateError(null);
+    try {
+      const res = await fetch(`/api/rastreio/${selectedOrder.trackings.codigo_rastreio}/atualizar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          action: 'delete',
+          eventIndex: index,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.error || 'Erro ao excluir evento.');
+      }
+      await fetchOrderDetail(selectedOrder.id);
+      fetchOrders();
+    } catch (err: any) {
+      setUpdateError(err.message || 'Erro ao excluir evento.');
+    } finally {
+      setDeletingIndex(null);
     }
   };
 
@@ -418,9 +751,68 @@ export default function AdminPage() {
           RESEND_API_KEY: resendApiKey,
           RESEND_FROM_EMAIL: resendFromEmail,
           NEXT_PUBLIC_APP_URL: nextPublicAppUrl,
+          NOTA_DELAY_HORAS: notaDelayHoras,
+          TAXA_ENABLED: String(taxaEnabled),
+          TAXA_DIAS_TENTATIVAS: taxaDiasTentativas,
+          TAXA_DIA_EXIBICAO: taxaDiaExibicao,
+          TAXA_NOME: taxaNome,
+          TAXA_VALOR: taxaValor,
+          TAXA_LINK_PAGAMENTO: taxaLinkPagamento,
+          UPSELL_ENABLED: String(upsellEnabled),
+          UPSELL_TITLE: upsellTitle,
+          UPSELL_DESCRIPTION: upsellDescription,
+          UPSELL_LINK: upsellLink,
+          UPSELL_IMAGE_URL: upsellImageUrl,
+          OPENAI_API_KEY: openaiApiKey,
         }),
       });
       if (!res.ok) throw new Error('Erro ao salvar.');
+
+      if (activeStore) {
+        await fetch('/api/stores', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({
+            id: activeStore.id,
+            logo_url: logoUrl,
+            primary_color: primaryColor,
+            banner_url: bannerUrl,
+            banner_link: bannerLink,
+            whatsapp_suporte: whatsappSuporte,
+            evolution_api_url: evolutionApiUrl,
+            evolution_api_key: evolutionApiKey,
+            evolution_instance_name: evolutionInstanceName,
+            whatsapp_enabled: whatsappEnabled,
+            ai_recovery_enabled: aiRecoveryEnabled,
+            openai_api_key: openaiApiKey,
+            ai_prompt_custom: aiPromptCustom,
+            ai_model: aiModel,
+            ai_tone: aiTone,
+            ai_temperature: aiTemperature,
+            ai_coupon_code: aiCouponCode,
+          }),
+        });
+        setActiveStore((prev: any) => prev ? ({
+          ...prev,
+          logo_url: logoUrl,
+          primary_color: primaryColor,
+          banner_url: bannerUrl,
+          banner_link: bannerLink,
+          whatsapp_suporte: whatsappSuporte,
+          evolution_api_url: evolutionApiUrl,
+          evolution_api_key: evolutionApiKey,
+          evolution_instance_name: evolutionInstanceName,
+          whatsapp_enabled: whatsappEnabled,
+          ai_recovery_enabled: aiRecoveryEnabled,
+          openai_api_key: openaiApiKey,
+          ai_prompt_custom: aiPromptCustom,
+          ai_model: aiModel,
+          ai_tone: aiTone,
+          ai_temperature: aiTemperature,
+          ai_coupon_code: aiCouponCode,
+        }) : null);
+      }
+
       setSettingsSuccess(true);
     } catch (err: any) {
       setSettingsError(err.message || 'Erro ao salvar.');
@@ -501,72 +893,251 @@ export default function AdminPage() {
   // ── Admin App ──
   return (
     <div className="flex flex-col min-h-screen bg-slate-950 text-white font-sans">
+      {/* ------------------------------------------------------------
+          VISAO 1: DASHBOARD SELETOR DE LOJAS (CARDS GRID)
+          ------------------------------------------------------------ */}
+      {!activeStore ? (
+        <div className="flex flex-col min-h-screen">
+          {/* Header Superior */}
+          <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-30">
+            <div className="flex items-center justify-between px-6 h-16">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-950/50">
+                  <Package className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-base font-extrabold text-white leading-none">Rastreio.IO SaaS</h1>
+                  <p className="text-[10px] text-indigo-400 font-semibold uppercase tracking-wider mt-0.5">Painel Gestor Multi-Loja</p>
+                </div>
+              </div>
 
-      {/* Top Nav */}
-      <header className="border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-md sticky top-0 z-30">
-        <div className="flex items-center justify-between px-4 sm:px-6 h-14">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
-              <Package className="w-4 h-4 text-white" />
+              <div className="flex items-center gap-4">
+                <span className="text-xs text-slate-400 hidden sm:inline-block font-medium">{session?.user?.email}</span>
+                <button onClick={handleLogout} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-300 transition-colors">
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-bold text-white leading-none">Admin Rastreio</p>
-              <p className="text-[10px] text-indigo-400 font-semibold tracking-widest uppercase leading-none mt-0.5">Shopify Suite v1</p>
-            </div>
-          </div>
+          </header>
 
-          {/* Tab Navigation */}
-          <nav className="hidden sm:flex items-center gap-1 bg-slate-950/60 border border-slate-800 rounded-xl p-1">
-            {([
-              { key: 'pedidos', label: 'Pedidos & Rastreio', icon: Package },
-              { key: 'fila',    label: 'Fila de E-mails',    icon: Mail },
-              { key: 'settings', label: 'Configuração Shopify', icon: Store },
-            ] as const).map(({ key, label, icon: Icon }) => (
-              <button key={key} onClick={() => setActiveTab(key)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  activeTab === key
-                    ? 'bg-indigo-600 text-white shadow'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}>
-                <Icon className="w-3.5 h-3.5" />
-                {label}
-                {key === 'fila' && queueStats.pendentes > 0 && (
-                  <span className="bg-amber-500 text-black text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                    {queueStats.pendentes}
-                  </span>
-                )}
+          {/* Conteúdo Principal do Dashboard de Lojas */}
+          <main className="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
+            {/* Banner de Boas-Vindas & Métricas SaaS */}
+            <div className="bg-gradient-to-r from-indigo-950/60 via-slate-900 to-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-2xl">
+              <div>
+                <span className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider mb-2 inline-block">
+                  Plataforma SaaS Multi-Tenant
+                </span>
+                <h2 className="text-2xl font-extrabold text-white">Minhas Lojas Integradas</h2>
+                <p className="text-xs text-slate-400 mt-1 max-w-xl">
+                  Selecione uma loja para gerenciar pedidos, códigos de rastreio e fila de e-mails em um workspace isolado.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setNewStoreModalOpen(true)}
+                className="py-3 px-5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-xl text-xs font-bold text-white transition-all shadow-lg shadow-indigo-950/50 flex items-center gap-2 shrink-0 cursor-pointer"
+              >
+                <PlusCircle className="w-4 h-4" />
+                Conectar Nova Loja Shopify
               </button>
-            ))}
-          </nav>
+            </div>
 
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-400 hidden sm:block">{session?.user?.email}</span>
-            <button onClick={handleLogout}
-              className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
+            {/* Grade de Cards de Lojas */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                  <Store className="w-4 h-4 text-indigo-400" />
+                  Lojas Cadastradas ({stores.length})
+                </h3>
+                <button onClick={fetchStores} disabled={loadingStores} className="text-xs text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer">
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingStores ? 'animate-spin' : ''}`} />
+                  Atualizar Lista
+                </button>
+              </div>
+
+              {loadingStores ? (
+                <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+                  <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-3" />
+                  <span className="text-xs font-medium">Carregando suas lojas...</span>
+                </div>
+              ) : stores.length === 0 ? (
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center space-y-3">
+                  <Store className="w-10 h-10 text-slate-600 mx-auto" />
+                  <p className="text-sm font-bold text-white">Nenhuma loja integrada ainda</p>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    Conecte sua primeira loja Shopify para começar a gerenciar os rastreios dos seus clientes.
+                  </p>
+                  <button
+                    onClick={() => setNewStoreModalOpen(true)}
+                    className="py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl inline-flex items-center gap-2 mt-2 cursor-pointer"
+                  >
+                    <PlusCircle className="w-4 h-4" />
+                    Integrar Loja Shopify
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {stores.map((s: any) => (
+                    <div
+                      key={s.id}
+                      className="bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-2xl p-6 transition-all shadow-xl hover:shadow-indigo-950/30 flex flex-col justify-between space-y-5 group"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform">
+                            <Store className="w-5 h-5" />
+                          </div>
+                          <span
+                            className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase ${
+                              s.status === 'ativa'
+                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
+                                : 'bg-amber-500/15 text-amber-400'
+                            }`}
+                          >
+                            {s.status}
+                          </span>
+                        </div>
+
+                        <div>
+                          <h4 className="font-extrabold text-white text-base group-hover:text-indigo-300 transition-colors leading-tight">
+                            {s.nome_loja}
+                          </h4>
+                          <p className="text-xs font-mono text-indigo-400/80 mt-1 flex items-center gap-1.5">
+                            <Globe className="w-3 h-3 text-slate-500" />
+                            {s.shopify_domain}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-slate-800/80 pt-4 flex items-center justify-between">
+                        <div>
+                          <p className="text-[10px] text-slate-500 uppercase font-semibold">Total de Pedidos</p>
+                          <p className="text-sm font-extrabold text-white mt-0.5">{s.total_pedidos || 0}</p>
+                        </div>
+
+                        <button
+                          onClick={() => handleSelectStore(s)}
+                          className="py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-950/50 transition-all flex items-center gap-1.5 group-hover:bg-indigo-500 cursor-pointer"
+                        >
+                          🚀 Acessar Painel
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </main>
         </div>
+      ) : (
+        /* ------------------------------------------------------------
+            VISAO 2: WORKSPACE DA LOJA COM SIDEBAR LATERAL FIXA
+            ------------------------------------------------------------ */
+        <div className="flex min-h-screen">
+          {/* Sidebar Lateral Fixa (Esquerda) */}
+          <aside className="w-64 bg-slate-900/90 border-r border-slate-800 flex flex-col justify-between shrink-0 sticky top-0 h-screen z-20">
+            <div className="p-4 space-y-5">
+              {/* Botão de Trocar / Voltar para Minhas Lojas */}
+              <button
+                onClick={() => setActiveStore(null)}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-slate-950 border border-slate-800 hover:border-slate-700 hover:bg-slate-800 rounded-xl text-xs font-bold text-slate-300 transition-all cursor-pointer shadow-sm group"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 text-indigo-400 group-hover:-translate-x-0.5 transition-transform" />
+                Voltar para Minhas Lojas
+              </button>
 
-        {/* Mobile Tabs */}
-        <div className="sm:hidden flex border-t border-slate-800 divide-x divide-slate-800">
-          {([
-            { key: 'pedidos', label: 'Pedidos', icon: Package },
-            { key: 'fila',    label: 'E-mails',  icon: Mail },
-            { key: 'settings', label: 'Config',  icon: Store },
-          ] as const).map(({ key, label, icon: Icon }) => (
-            <button key={key} onClick={() => setActiveTab(key)}
-              className={`flex-1 flex flex-col items-center gap-0.5 py-2 text-[10px] font-semibold transition-colors ${
-                activeTab === key ? 'text-indigo-400' : 'text-slate-500'
-              }`}>
-              <Icon className="w-4 h-4" />
-              {label}
-            </button>
-          ))}
-        </div>
-      </header>
+              {/* Informações da Loja Ativa */}
+              <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-3.5 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white shrink-0 shadow-md">
+                  <Store className="w-4.5 h-4.5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-extrabold text-white truncate leading-tight">{activeStore.nome_loja}</p>
+                  <p className="text-[10px] font-mono text-indigo-400 truncate mt-0.5">{activeStore.shopify_domain}</p>
+                </div>
+              </div>
 
-      {/* ═══════════ TAB: PEDIDOS ═══════════ */}
+              {/* Menu de Navegação da Sidebar */}
+              <nav className="space-y-1">
+                <p className="px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Workspace</p>
+                {[
+                  { key: 'pedidos',   label: 'Pedidos & Rastreio', icon: Package },
+                  { key: 'fila',      label: 'Fila de E-mails',    icon: Mail },
+                  { key: 'ai_agent',  label: 'Agente de IA',       icon: Bot },
+                  { key: 'analytics', label: 'Analytics Logísticos', icon: BarChart3 },
+                  { key: 'settings',  label: 'Configurações Loja', icon: Store },
+                  { key: 'members',   label: 'Membros da Loja',    icon: Users },
+                ].map(({ key, label, icon: Icon }) => (
+                  <button
+                    key={key}
+                    onClick={() => {
+                      setActiveTab(key as any);
+                      if (key === 'ai_agent') fetchAiConversations();
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                      activeTab === key
+                        ? 'bg-indigo-600 text-white font-bold shadow-md shadow-indigo-950/40'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Icon className="w-4 h-4" />
+                      <span>{label}</span>
+                    </div>
+                    {key === 'fila' && queueStats.pendentes > 0 && (
+                      <span className="bg-amber-500 text-black text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                        {queueStats.pendentes}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </nav>
+            </div>
+
+            {/* Rodapé da Sidebar */}
+            <div className="p-4 border-t border-slate-800/80 bg-slate-950/40">
+              <div className="flex items-center justify-between">
+                <div className="min-w-0 pr-2">
+                  <p className="text-[11px] font-bold text-white truncate">{session?.user?.email}</p>
+                  <p className="text-[9px] text-slate-500">Lojista / Admin</p>
+                </div>
+                <button onClick={handleLogout} className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white cursor-pointer">
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </aside>
+
+          {/* Área Principal de Conteúdo do Workspace */}
+          <main className="flex-1 flex flex-col min-w-0 bg-slate-950 overflow-y-auto">
+            {/* Cabeçalho do Conteúdo */}
+            <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-6 py-3.5 flex items-center justify-between sticky top-0 z-10">
+              <div>
+                <h2 className="text-sm font-extrabold text-white flex items-center gap-2">
+                  {activeTab === 'pedidos' && '📦 Gestão de Pedidos & Códigos de Rastreio'}
+                  {activeTab === 'fila' && '✉️ Fila de Notificações por E-mail'}
+                  {activeTab === 'ai_agent' && '🤖 Agente de IA · Recuperação de Vendas & Suporte'}
+                  {activeTab === 'analytics' && '📊 Analytics Logísticos da Loja'}
+                  {activeTab === 'settings' && '⚙️ Configurações da Loja Shopify'}
+                  {activeTab === 'members' && '👥 Membros e Acessos da Loja'}
+                </h2>
+                <p className="text-[10px] text-slate-400">Loja ativa: <span className="text-indigo-400 font-bold">{activeStore.nome_loja}</span></p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => fetchOrders(activeStore.id)}
+                  disabled={loadingOrders}
+                  className="px-3 py-1.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 rounded-xl text-xs text-slate-300 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingOrders ? 'animate-spin' : ''}`} />
+                  Atualizar Dados
+                </button>
+              </div>
+            </header>
+
+      {/* ----------- TAB: PEDIDOS ----------- */}
       {activeTab === 'pedidos' && (
         <div className="flex-1 flex overflow-hidden" style={{ height: 'calc(100vh - 56px)' }}>
 
@@ -596,8 +1167,8 @@ export default function AdminPage() {
                     onChange={e => setSearchQuery(e.target.value)}
                     className="w-full pl-8 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
                 </div>
-                <button onClick={fetchOrders} disabled={loadingOrders}
-                  className="p-2 bg-slate-900 border border-slate-800 hover:bg-slate-800 rounded-xl text-slate-400 disabled:opacity-50">
+                <button onClick={() => fetchOrders()} disabled={loadingOrders}
+                  className="p-2 bg-slate-900 border border-slate-800 hover:bg-slate-800 rounded-xl text-slate-400 disabled:opacity-55">
                   <RefreshCw className={`w-3.5 h-3.5 ${loadingOrders ? 'animate-spin' : ''}`} />
                 </button>
               </div>
@@ -627,8 +1198,12 @@ export default function AdminPage() {
                     className="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-[10px] font-bold text-slate-300 transition-colors flex items-center justify-center gap-1">
                     🗓️ Esta Semana
                   </button>
+                  <button onClick={() => handleSendBatchEmails('exceto_hoje')} disabled={batchSending}
+                    className="py-1.5 px-2 bg-violet-600/20 hover:bg-violet-600/30 border border-violet-500/30 rounded-lg text-[10px] font-bold text-violet-300 transition-colors flex items-center justify-center gap-1">
+                    ⏳ Exceto Hoje
+                  </button>
                   <button onClick={() => handleSendBatchEmails('pendentes')} disabled={batchSending}
-                    className="py-1.5 px-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 rounded-lg text-[10px] font-bold text-amber-300 transition-colors flex items-center justify-center gap-1">
+                    className="col-span-2 py-1.5 px-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 rounded-lg text-[10px] font-bold text-amber-300 transition-colors flex items-center justify-center gap-1">
                     🚀 Todos Pendentes
                   </button>
                 </div>
@@ -678,298 +1253,10 @@ export default function AdminPage() {
               )}
             </div>
           </div>
-
-          {/* Right: Order Detail */}
-          <div className={`flex-1 flex flex-col overflow-hidden bg-slate-900/5 ${selectedOrder ? 'flex' : 'hidden lg:flex items-center justify-center'}`}>
-            {loadingDetail ? (
-              <div className="flex-1 flex flex-col items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-2" />
-                <span className="text-sm text-slate-400">Carregando detalhes...</span>
-              </div>
-            ) : selectedOrder ? (
-              <div className="flex-1 overflow-y-auto flex flex-col">
-
-                {/* Mobile back */}
-                <div className="p-4 border-b border-slate-800 bg-slate-900/30 flex items-center lg:hidden">
-                  <button onClick={() => setSelectedOrder(null)} className="flex items-center gap-1.5 text-xs text-indigo-400 font-medium">
-                    <ArrowLeft className="w-4 h-4" /> Voltar para lista
-                  </button>
-                </div>
-
-                {/* Order Header */}
-                <div className="p-5 border-b border-slate-800 bg-slate-900/50">
-                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                    <div>
-                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Pedido</span>
-                      <h2 className="text-2xl font-bold text-white">#{selectedOrder.numero_pedido}</h2>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        <StatusBadge status={selectedOrder.status_pedido} />
-                        {selectedOrder.shopify_fulfillment_status === 'fulfilled' && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-400 font-semibold">Shopify: Fulfillment ✓</span>
-                        )}
-                        <span className="text-[10px] text-slate-500">
-                          {new Date(selectedOrder.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col items-end gap-2">
-                      {selectedOrder.trackings?.codigo_rastreio && (
-                        <div className="bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-2 text-right">
-                          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest block">Código de Rastreio</span>
-                          <span className="text-base font-mono font-extrabold text-indigo-400">{selectedOrder.trackings.codigo_rastreio}</span>
-                        </div>
-                      )}
-
-                      {/* Email + Shopify action */}
-                      {selectedOrder.trackings?.codigo_rastreio && selectedOrder.customers?.email && (
-                        <div className="flex items-center gap-2">
-                          {/* Botão de gerar Nota de Compra */}
-                          <button
-                            onClick={() => {
-                              const printWindow = window.open('', '_blank');
-                              if (printWindow) {
-                                printWindow.document.write(`
-                                  <html>
-                                    <head>
-                                      <title>Nota de Compra #${selectedOrder.numero_pedido}</title>
-                                      <style>
-                                        body { font-family: 'Courier New', monospace; padding: 20px; color: #000; background: #fff; }
-                                        .header { text-align: center; border-bottom: 2px dashed #000; padding-bottom: 10px; margin-bottom: 20px; }
-                                        .company-name { font-size: 18px; font-weight: bold; }
-                                        .section { margin-bottom: 15px; border-bottom: 1px dashed #000; padding-bottom: 10px; }
-                                        .section-title { font-weight: bold; text-decoration: underline; margin-bottom: 5px; }
-                                        .row { display: flex; justify-content: space-between; font-size: 12px; margin: 3px 0; }
-                                        .item-header { font-weight: bold; border-bottom: 1px solid #000; margin-top: 10px; }
-                                        .footer { text-align: center; margin-top: 30px; font-size: 10px; border-top: 2px dashed #000; padding-top: 10px; }
-                                      </style>
-                                    </head>
-                                    <body>
-                                      <div class="header">
-                                        <div class="company-name">${empresaNome || 'MINHA EMPRESA LTDA'}</div>
-                                        <div>CNPJ: ${empresaCnpj || '00.000.000/0001-00'}</div>
-                                        <div>Endereço: ${empresaEndereco || 'Rua Principal, 100'}</div>
-                                        <div>CEP: ${empresaCep || '01000-000'} - ${empresaCidade || 'São Paulo'}/${empresaEstado || 'SP'}</div>
-                                        <div style="margin-top: 10px; font-weight: bold;">NOTA DE COMPRA (SEM VALOR FISCAL)</div>
-                                      </div>
-
-                                      <div class="section">
-                                        <div class="section-title">DADOS DO CLIENTE</div>
-                                        <div class="row"><span>Nome:</span> <span>${selectedOrder.customers?.nome || '—'}</span></div>
-                                        <div class="row"><span>CPF:</span> <span>${selectedOrder.customers?.cpf || '—'}</span></div>
-                                        <div class="row"><span>E-mail:</span> <span>${selectedOrder.customers?.email || '—'}</span></div>
-                                        <div class="row"><span>Telefone:</span> <span>${selectedOrder.customers?.telefone || '—'}</span></div>
-                                      </div>
-
-                                      <div class="section">
-                                        <div class="section-title">ENDEREÇO DE ENTREGA</div>
-                                        ${selectedOrder.addresses ? `
-                                          <div class="row"><span>Rua/Logradouro:</span> <span>${selectedOrder.addresses.logradouro || ''}, ${selectedOrder.addresses.numero || ''}</span></div>
-                                          <div class="row"><span>Compl:</span> <span>${selectedOrder.addresses.complemento || '—'}</span></div>
-                                          <div class="row"><span>Bairro:</span> <span>${selectedOrder.addresses.bairro || '—'}</span></div>
-                                          <div class="row"><span>Cidade/UF:</span> <span>${selectedOrder.addresses.cidade || ''}/${selectedOrder.addresses.estado || ''}</span></div>
-                                          <div class="row"><span>CEP:</span> <span>${selectedOrder.addresses.cep || ''}</span></div>
-                                        ` : '<div>Sem endereço de entrega cadastrado.</div>'}
-                                      </div>
-
-                                      <div class="section">
-                                        <div class="section-title">ITENS DO PEDIDO</div>
-                                        <div class="row item-header">
-                                          <span style="width: 50%;">Item</span>
-                                          <span style="width: 15%; text-align: center;">Qtd</span>
-                                          <span style="width: 15%; text-align: right;">Unit</span>
-                                          <span style="width: 20%; text-align: right;">Total</span>
-                                        </div>
-                                        ${selectedOrder.itens?.map((item: any) => `
-                                          <div class="row">
-                                            <span style="width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.title}</span>
-                                            <span style="width: 15%; text-align: center;">${item.quantity}</span>
-                                            <span style="width: 15%; text-align: right;">R$ ${parseFloat(item.price).toFixed(2)}</span>
-                                            <span style="width: 20%; text-align: right;">R$ ${(item.quantity * parseFloat(item.price)).toFixed(2)}</span>
-                                          </div>
-                                        `).join('')}
-                                      </div>
-
-                                      <div class="row" style="font-weight: bold; font-size: 14px; margin-top: 15px;">
-                                        <span>TOTAL DO PEDIDO:</span>
-                                        <span>R$ ${selectedOrder.valor_total?.toFixed(2) || '0.00'}</span>
-                                      </div>
-
-                                      <div class="footer">
-                                        <p>Código de Rastreio: ${selectedOrder.trackings?.codigo_rastreio || '—'}</p>
-                                        <p>Data do Pedido: ${new Date(selectedOrder.created_at).toLocaleDateString('pt-BR')}</p>
-                                        <p style="font-weight: bold; margin-top: 10px;">OBRIGADO PELA PREFERÊNCIA!</p>
-                                      </div>
-                                    </body>
-                                  </html>
-                                `);
-                                printWindow.document.close();
-                                printWindow.print();
-                              }
-                            }}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-slate-200 border border-slate-700/80 rounded-xl transition-all text-xs font-semibold shadow-md"
-                          >
-                            <FileText className="w-3.5 h-3.5" /> Nota de Compra
-                          </button>
-
-                            <button onClick={() => handleSendNotification('nota')}
-                              disabled={sendingEmail}
-                              className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-slate-200 border border-slate-700/80 rounded-xl transition-all text-xs font-semibold shadow-md">
-                              <Mail className="w-3.5 h-3.5 text-blue-400" /> Enviar Nota por E-mail
-                            </button>
-
-                            <button onClick={() => handleSendNotification('ambos')}
-                              disabled={sendingEmail || emailSent}
-                              className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all text-xs font-semibold shadow-md ${
-                                emailSent
-                                  ? 'bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 cursor-default'
-                                  : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white disabled:opacity-60'
-                              }`}>
-                              {sendingEmail ? (
-                                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Enviando...</>
-                              ) : emailSent ? (
-                                <><CheckCheck className="w-3.5 h-3.5" /> E-mail + Shopify OK!</>
-                              ) : (
-                                <><Zap className="w-3.5 h-3.5" /> Enviar Rastreio + Nota</>
-                              )}
-                            </button>
-                          </div>
-                        )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Detail Grid */}
-                <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-5">
-
-                  {/* Cliente */}
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
-                    <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-indigo-400" /> Dados do Cliente
-                    </h3>
-                    <InfoRow label="Nome" value={selectedOrder.customers?.nome} />
-                    <InfoRow label="E-mail" value={selectedOrder.customers?.email} mono />
-                    {selectedOrder.customers?.telefone && <InfoRow label="Telefone" value={selectedOrder.customers.telefone} />}
-                    {selectedOrder.customers?.cpf && <InfoRow label="CPF" value={selectedOrder.customers.cpf} mono />}
-                  </div>
-
-                  {/* Endereço */}
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
-                    <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-indigo-400" /> Endereço de Entrega
-                    </h3>
-                    {selectedOrder.addresses ? (
-                      <div className="text-xs text-slate-300 space-y-1">
-                        <p>{selectedOrder.addresses.logradouro}{selectedOrder.addresses.numero ? `, ${selectedOrder.addresses.numero}` : ''}</p>
-                        {selectedOrder.addresses.complemento && <p className="text-slate-400">{selectedOrder.addresses.complemento}</p>}
-                        {selectedOrder.addresses.bairro && <p className="text-slate-400">{selectedOrder.addresses.bairro}</p>}
-                        <p>{selectedOrder.addresses.cidade} / {selectedOrder.addresses.estado}</p>
-                        <p className="font-mono text-slate-400">CEP: {selectedOrder.addresses.cep}</p>
-                      </div>
-                    ) : <p className="text-xs text-slate-500">Sem endereço cadastrado.</p>}
-                  </div>
-
-                  {/* Itens */}
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 md:col-span-2">
-                    <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-                      <FileText className="w-3.5 h-3.5 text-indigo-400" /> Itens do Pedido
-                    </h3>
-                    <div className="divide-y divide-slate-800">
-                      {selectedOrder.itens?.map((item, idx) => (
-                        <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
-                          <div>
-                            <p className="font-medium text-white">{item.title}</p>
-                            <p className="text-[10px] text-slate-500 mt-0.5">Qtd: {item.quantity} × R$ {item.price} · SKU: {item.sku || 'N/A'}</p>
-                          </div>
-                          <span className="font-semibold text-white">R$ {(item.quantity * parseFloat(item.price)).toFixed(2)}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="pt-3 border-t border-slate-800 flex justify-between text-sm font-bold text-white">
-                      <span>Total</span>
-                      <span>R$ {selectedOrder.valor_total?.toFixed(2)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tracking Section */}
-                {selectedOrder.trackings && (
-                  <div className="px-5 pb-5 grid grid-cols-1 md:grid-cols-2 gap-5">
-
-                    {/* Form */}
-                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
-                      <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-                        <PlusCircle className="w-3.5 h-3.5 text-indigo-400" /> Registrar Novo Evento
-                      </h3>
-                      {updateError && <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-2.5 rounded-lg">{updateError}</div>}
-                      <form onSubmit={handleAddStatus} className="space-y-3">
-                        <div>
-                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Status</label>
-                          <select value={updateStatus} onChange={e => setUpdateStatus(e.target.value)}
-                            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white">
-                            <option value="postado">Postado</option>
-                            <option value="em_transito">Em Trânsito</option>
-                            <option value="saiu_para_entrega">Saiu para Entrega</option>
-                            <option value="entregue">Entregue</option>
-                            <option value="extraviado">Extraviado</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Descrição</label>
-                          <input type="text" required value={updateDesc} onChange={e => setUpdateDesc(e.target.value)}
-                            placeholder="Ex: Objeto encaminhado para Unidade de Tratamento"
-                            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white" />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Localidade</label>
-                          <input type="text" required value={updateLocal} onChange={e => setUpdateLocal(e.target.value)}
-                            placeholder="Ex: São Paulo, SP"
-                            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white" />
-                        </div>
-                        <button type="submit" disabled={submittingUpdate}
-                          className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-semibold disabled:opacity-50 transition-colors">
-                          {submittingUpdate ? 'Salvando...' : 'Salvar Evento'}
-                        </button>
-                      </form>
-                    </div>
-
-                    {/* History */}
-                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
-                      <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-indigo-400" /> Histórico
-                      </h3>
-                      <div className="relative border-l border-slate-800 ml-2.5 pl-4 space-y-4 max-h-[280px] overflow-y-auto">
-                        {selectedOrder.trackings.historico?.slice().reverse().map((ev: any, idx: number) => (
-                          <div key={idx} className="relative text-xs">
-                            <div className="absolute -left-[21px] top-0.5 w-3.5 h-3.5 rounded-full bg-slate-800 border border-slate-900 flex items-center justify-center">
-                              <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                            </div>
-                            <p className="font-semibold text-slate-200">{ev.descricao}</p>
-                            <p className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-2">
-                              <span>{new Date(ev.data).toLocaleString('pt-BR')}</span>
-                              <span>·</span>
-                              <span>{ev.local}</span>
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-slate-500 gap-3">
-                <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center">
-                  <Package className="w-8 h-8 text-slate-700" />
-                </div>
-                <p className="text-sm">Selecione um pedido para visualizar</p>
-              </div>
-            )}
-          </div>
         </div>
       )}
 
-      {/* ═══════════ TAB: FILA DE E-MAILS ═══════════ */}
+      {/* ----------- TAB: FILA DE E-MAILS ----------- */}
       {activeTab === 'fila' && (
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           <div className="max-w-5xl mx-auto space-y-5">
@@ -988,6 +1275,43 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
+
+            {/* Banner de Ação em Lote */}
+            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
+              <div>
+                <p className="text-xs font-bold text-white flex items-center gap-2">
+                  <Send className="w-4 h-4 text-indigo-400" />
+                  Disparo em Massa de Rastreio + Nota Fiscal
+                </p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Envie automaticamente e-mails de rastreamento e comprovantes de compra para pedidos pendentes.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <button
+                  onClick={() => handleSendBatchEmails('exceto_hoje')}
+                  disabled={batchSending}
+                  className="flex-1 sm:flex-none py-2 px-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 rounded-xl text-xs font-bold text-white transition-all shadow-md shadow-indigo-950/40 flex items-center justify-center gap-1.5"
+                >
+                  {batchSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 text-amber-300" />}
+                  Disparar (Exceto Pedidos de Hoje)
+                </button>
+
+                <button
+                  onClick={() => handleSendBatchEmails('pendentes')}
+                  disabled={batchSending}
+                  className="flex-1 sm:flex-none py-2 px-3.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 rounded-xl text-xs font-bold text-slate-200 transition-colors flex items-center justify-center gap-1.5 border border-slate-700"
+                >
+                  🚀 Todos Pendentes
+                </button>
+              </div>
+            </div>
+
+            {batchResult && (
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-400 text-center font-semibold animate-in fade-in">
+                {batchResult}
+              </div>
+            )}
 
             {/* Filters + Refresh */}
             <div className="flex items-center justify-between gap-3">
@@ -1095,7 +1419,431 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ═══════════ TAB: CONFIGURAÇÕES ═══════════ */}
+      {/* ----------- TAB DEDICADA: AGENTE DE IA & RECUPERAÇÃO DE VENDAS ----------- */}
+      {activeTab === 'ai_agent' && (
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+          <div className="max-w-5xl mx-auto space-y-6">
+            
+            {/* Cards de Métricas em Destaque (KPIs de Recuperação) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
+                  <Send className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Leads Contatados</p>
+                  <p className="text-lg font-extrabold text-white mt-0.5">{aiMetrics.total_contatados}</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 shrink-0">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Leads Engajados</p>
+                  <p className="text-lg font-extrabold text-white mt-0.5">{aiMetrics.total_engajados}</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Vendas Salvas</p>
+                  <p className="text-lg font-extrabold text-emerald-400 mt-0.5">{aiMetrics.total_convertidos}</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">R$ Recuperados</p>
+                  <p className="text-lg font-extrabold text-amber-400 mt-0.5">R$ {aiMetrics.faturamento_recuperado.toFixed(2)}</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400 shrink-0">
+                  <BarChart3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Taxa Conversão</p>
+                  <p className="text-lg font-extrabold text-violet-400 mt-0.5">{aiMetrics.taxa_conversao}%</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Banner de Status e Toggle Principal */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-80 h-80 bg-violet-600/10 rounded-full filter blur-3xl -z-0 pointer-events-none" />
+              
+              <div className="flex items-center gap-4 z-10">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-xl shadow-indigo-950/60 shrink-0">
+                  <Bot className="w-7 h-7" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-extrabold text-white">Agente de IA Autônomo para WhatsApp</h2>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/30 uppercase tracking-wider">
+                      Evolution API
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1 max-w-xl">
+                    Sua IA atende clientes 24/7 no WhatsApp, tira dúvidas logísticas de pedidos e recupera vendas com cupons exclusivos.
+                  </p>
+                </div>
+              </div>
+
+              <div className="z-10 flex items-center gap-3 bg-slate-950/80 border border-slate-800 p-3 rounded-2xl">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={aiRecoveryEnabled}
+                    onChange={e => setAiRecoveryEnabled(e.target.checked)}
+                    className="w-5 h-5 rounded text-violet-600 bg-slate-900 border-slate-700 focus:ring-violet-500 cursor-pointer"
+                  />
+                  <div>
+                    <span className="text-xs font-bold text-white block">
+                      {aiRecoveryEnabled ? '⚡ Agente de IA Ativo' : '⏸️ Agente Desativado'}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block">
+                      {aiRecoveryEnabled ? 'Respondendo mensagens automaticamente' : 'Clique para ligar o atendimento autônomo'}
+                    </span>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* Painel de Configurações Avançadas do LLM */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
+              <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-violet-500/10 text-violet-400">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-white">Parâmetros & Modelo de Inteligência Artificial</h3>
+                    <p className="text-xs text-slate-400">Personalize o comportamento, tom de voz e criatividade do LLM</p>
+                  </div>
+                </div>
+              </div>
+
+              <form onSubmit={handleSaveSettings} className="space-y-6">
+                {settingsSuccess && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs p-3.5 rounded-xl flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4" /> Configurações do Agente de IA salvas com sucesso!
+                  </div>
+                )}
+
+                {/* Seletores de Modelo, Tom e Criatividade em Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Seletor de Modelo */}
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                      Modelo LLM
+                    </label>
+                    <select
+                      value={aiModel}
+                      onChange={e => setAiModel(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-semibold focus:ring-2 focus:ring-violet-500 focus:outline-none"
+                    >
+                      <option value="gpt-4o-mini">⚡ OpenAI GPT-4o-mini (Rápido e Econômico)</option>
+                      <option value="gpt-4o">🧠 OpenAI GPT-4o (Máxima Persuasão)</option>
+                      <option value="gemini-1.5-flash">✨ Google Gemini 1.5 Flash (Ultrarrápido)</option>
+                    </select>
+                    <span className="text-[10px] text-slate-500 mt-1 block">Escolha a capacidade de raciocínio da IA.</span>
+                  </div>
+
+                  {/* Seletor de Tom de Voz */}
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                      Tom de Voz do Atendimento
+                    </label>
+                    <select
+                      value={aiTone}
+                      onChange={e => setAiTone(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-semibold focus:ring-2 focus:ring-violet-500 focus:outline-none"
+                    >
+                      <option value="amigavel">😊 Amigável & Descontraído</option>
+                      <option value="vendedor">🎯 Vendedor & Persuasivo (Foco em Oferta)</option>
+                      <option value="formal">👔 Formal & Profissional</option>
+                      <option value="empatico">💖 Empático & Atencioso (Resolução de Calma)</option>
+                    </select>
+                    <span className="text-[10px] text-slate-500 mt-1 block">Estilo de linguagem no WhatsApp.</span>
+                  </div>
+
+                  {/* Slider de Temperatura / Criatividade */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                        Criatividade (Temperatura)
+                      </label>
+                      <span className="text-xs font-mono font-bold text-violet-400">{aiTemperature}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.1"
+                      max="1.0"
+                      step="0.1"
+                      value={aiTemperature}
+                      onChange={e => setAiTemperature(parseFloat(e.target.value))}
+                      className="w-full h-2 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-violet-500"
+                    />
+                    <div className="flex justify-between text-[9px] text-slate-500 mt-1 font-semibold">
+                      <span>0.1 (Exato/Rígido)</span>
+                      <span>0.7 (Equilibrado)</span>
+                      <span>1.0 (Criativo)</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cupom Automático e Chave OpenAI */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-800/80">
+                  <SettingsInput
+                    label="Cupom de Desconto Automático (Opcional)"
+                    value={aiCouponCode}
+                    onChange={setAiCouponCode}
+                    placeholder="EX: RESGATE10"
+                    hint="Cupom que a IA oferecerá aos clientes com dúvidas para fechar o pedido."
+                  />
+                  <SettingsInput
+                    label="Chave de API OpenAI da Loja (OpenAI Key)"
+                    value={openaiApiKey}
+                    onChange={setOpenaiApiKey}
+                    placeholder="sk-proj-xxxxxxxxxxxx"
+                    type="password"
+                    mono
+                    hint="Caso deseje utilizar sua própria chave da OpenAI."
+                  />
+                </div>
+
+                {/* Editor do Prompt de Instruções da IA com Tags Rápidas */}
+                <div className="pt-4 border-t border-slate-800/80 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+                        Instruções Personalizadas do Lojista (Prompt)
+                      </label>
+                      <span className="text-[10px] text-slate-500 block">Escreva orientações específicas para a IA responder sobre sua marca.</span>
+                    </div>
+
+                    {/* Botões Rápidos de Inserção de Tags */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] text-slate-500 font-bold mr-1">Inserir Tag:</span>
+                      {[
+                        { tag: '{NOME_CLIENTE}', label: 'Cliente' },
+                        { tag: '{NUMERO_PEDIDO}', label: 'Pedido' },
+                        { tag: '{LINK_RASTREIO}', label: 'Rastreio' },
+                        { tag: '{CUPOM_DESCONTO}', label: 'Cupom' },
+                      ].map(({ tag, label }) => (
+                        <button
+                          type="button"
+                          key={tag}
+                          onClick={() => setAiPromptCustom(prev => `${prev} ${tag}`)}
+                          className="px-2 py-1 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg text-[10px] font-mono text-violet-400 font-bold transition-colors cursor-pointer"
+                        >
+                          +{label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <textarea
+                    rows={5}
+                    value={aiPromptCustom}
+                    onChange={e => setAiPromptCustom(e.target.value)}
+                    placeholder="Exemplo: Olá {NOME_CLIENTE}! Sou o assistente da loja. Vi que seu pedido {NUMERO_PEDIDO} foi postado. Se tiver dúvidas use o link {LINK_RASTREIO} ou aproveite nosso cupom {CUPOM_DESCONTO} para novos itens!"
+                    className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-sans focus:ring-2 focus:ring-violet-500 focus:outline-none leading-relaxed"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={savingSettings}
+                  className="w-full py-3.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-xl shadow-indigo-950/50 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {savingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  Salvar Configurações do Agente de IA
+                </button>
+              </form>
+            </div>
+
+            {/* Tabela / Histórico de Conversas da IA no WhatsApp */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400">
+                    <MessageSquare className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-white">Histórico de Atendimentos do Bot</h3>
+                    <p className="text-xs text-slate-400">Mensagens recentes trocadas pela IA no WhatsApp com os compradores</p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={fetchAiConversations}
+                  disabled={loadingAiConversations}
+                  className="px-3 py-1.5 bg-slate-950 border border-slate-800 hover:bg-slate-800 rounded-xl text-xs text-slate-300 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingAiConversations ? 'animate-spin' : ''}`} />
+                  Atualizar Conversas
+                </button>
+              </div>
+
+              {loadingAiConversations ? (
+                <div className="py-12 flex flex-col items-center justify-center text-slate-500">
+                  <Loader2 className="w-6 h-6 animate-spin text-violet-500 mb-2" />
+                  <span className="text-xs">Carregando conversas do WhatsApp...</span>
+                </div>
+              ) : aiConversations.length === 0 ? (
+                <div className="py-12 text-center text-slate-500 text-xs">
+                  Nenhuma conversa registrada pela IA até o momento. As interações aparecerão aqui assim que o webhook da Evolution API receber chamadas.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {aiConversations.map((conv: any) => (
+                    <div key={conv.id} className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 space-y-2">
+                      <div className="flex items-center justify-between text-xs border-b border-slate-800/60 pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white">{conv.customer_name || 'Cliente WhatsApp'}</span>
+                          <span className="font-mono text-slate-400">({conv.customer_phone})</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500">
+                          {new Date(conv.created_at).toLocaleString('pt-BR')}
+                        </span>
+                      </div>
+
+                      <div className="space-y-2 pt-1 text-xs">
+                        {Array.isArray(conv.mensagens) && conv.mensagens.map((msg: any, mIdx: number) => (
+                          <div key={mIdx} className={`flex ${msg.sender === 'customer' ? 'justify-start' : 'justify-end'}`}>
+                            <div className={`max-w-[80%] p-3 rounded-2xl ${
+                              msg.sender === 'customer'
+                                ? 'bg-slate-900 border border-slate-800 text-slate-200'
+                                : 'bg-violet-600/20 border border-violet-500/30 text-violet-200'
+                            }`}>
+                              <span className="text-[9px] font-bold block uppercase tracking-wider mb-0.5 opacity-70">
+                                {msg.sender === 'customer' ? '👤 Cliente' : '🤖 Agente de IA'}
+                              </span>
+                              <p className="leading-relaxed">{msg.text}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ----------- TAB: ANALYTICS & IA ----------- */}
+      {activeTab === 'analytics' && (
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+          <div className="max-w-5xl mx-auto space-y-6">
+            {/* Header de Métricas Operacionais */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                  <Clock className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Tempo Médio Entrega</p>
+                  <p className="text-xl font-extrabold text-white mt-0.5">3.8 Dias</p>
+                  <p className="text-[10px] text-emerald-400 font-semibold mt-0.5">↓ 12% mais rápido</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Taxa de Sucesso</p>
+                  <p className="text-xl font-extrabold text-white mt-0.5">97.8%</p>
+                  <p className="text-[10px] text-emerald-400 font-semibold mt-0.5">Sem extravios este mês</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Retenção / Atenção</p>
+                  <p className="text-xl font-extrabold text-white mt-0.5">2 Pedidos</p>
+                  <p className="text-[10px] text-amber-400 font-semibold mt-0.5">Aguardando retentativa</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400">
+                  <Bot className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Vendas Salvas pela IA</p>
+                  <p className="text-xl font-extrabold text-white mt-0.5">14 Recuperações</p>
+                  <p className="text-[10px] text-violet-400 font-semibold mt-0.5">via Evolution WhatsApp</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Painel do Agente de IA para Recuperação de Vendas */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white shadow-lg">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                      Agente de IA Autônomo · Recuperação de Vendas
+                    </h3>
+                    <p className="text-xs text-slate-400">Atendimento e conversão automática no WhatsApp da loja</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl">
+                  <div className={`w-2.5 h-2.5 rounded-full ${aiRecoveryEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-600'}`} />
+                  <span className="text-xs font-bold text-slate-300">
+                    {aiRecoveryEnabled ? 'Agente de IA Ativo' : 'Agente Desativado'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 space-y-1">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Gatilho de Ação</span>
+                  <p className="font-bold text-white">Webhook da Evolution API</p>
+                  <p className="text-slate-400 text-[11px]">Responde automaticamente mensagens de clientes com dúvidas ou objeções.</p>
+                </div>
+
+                <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 space-y-1">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Modelo LLM</span>
+                  <p className="font-bold text-indigo-400">OpenAI GPT-4o-mini</p>
+                  <p className="text-slate-400 text-[11px]">Treinado com o contexto do pedido, código de rastreio e instrução do lojista.</p>
+                </div>
+
+                <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 space-y-1">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Último Disparo</span>
+                  <p className="font-bold text-emerald-400">Há 15 minutos</p>
+                  <p className="text-slate-400 text-[11px]">Dúvida sobre entrega em São Paulo resolvida com sucesso.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {/* ----------- TAB: CONFIGURACOES ----------- */}
       {activeTab === 'settings' && (
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           <div className="max-w-2xl mx-auto">
@@ -1138,6 +1886,28 @@ export default function AdminPage() {
 
                   <div className="pt-4 border-t border-slate-800 space-y-4">
                     <div>
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        ⚡ Automação de E-mails Agendados
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">Prazos para disparo automático da Nota Fiscal e do E-mail de Rastreio ao Lead.</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <SettingsInput 
+                        label="Envio da Nota Fiscal (Horas após compra)" 
+                        value={notaDelayHoras} 
+                        onChange={setNotaDelayHoras} 
+                        type="number" 
+                        hint="Tempo de espera em horas para enviar o e-mail da Nota Fiscal (Padrão: 2h)."
+                      />
+                      <div className="p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl flex flex-col justify-center">
+                        <span className="text-xs font-bold text-slate-300">📅 Envio de Rastreio ao Lead</span>
+                        <span className="text-[11px] text-slate-400 mt-1">Disparado automaticamente por e-mail no <strong>Próximo Dia Útil</strong> (pulando finais de semana e feriados).</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-800 space-y-4">
+                    <div>
                       <h3 className="text-sm font-bold text-white">Dados Fiscais / Nota de Compra</h3>
                       <p className="text-xs text-slate-400 mt-0.5">Dados da empresa impressos na nota fiscal de compra sem valor fiscal.</p>
                     </div>
@@ -1154,6 +1924,101 @@ export default function AdminPage() {
                   </div>
 
                   <div className="pt-4 border-t border-slate-800 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                          ⚠️ Taxa de Despacho Postal & Retentativas
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-0.5">Regras para 3 tentativas de entrega (dias 9, 10, 11) e cobrança de taxa de liberação.</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" checked={taxaEnabled} onChange={e => setTaxaEnabled(e.target.checked)} className="sr-only peer" />
+                        <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+                      </label>
+                    </div>
+
+                    {taxaEnabled && (
+                      <div className="space-y-4 pt-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <SettingsInput 
+                            label="Dias das 3 Retentativas" 
+                            value={taxaDiasTentativas} 
+                            onChange={setTaxaDiasTentativas} 
+                            placeholder="9,10,11" 
+                            hint="Dias após a compra em que ocorrem as tentativas não atendidas."
+                          />
+                          <SettingsInput 
+                            label="Dia para Exibir Alerta & Botão de Taxa" 
+                            value={taxaDiaExibicao} 
+                            onChange={setTaxaDiaExibicao} 
+                            type="number"
+                            hint="Dia a partir do qual a caixa de aviso e botão de pagamento surgem na tela (Padrão: 11)."
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <SettingsInput 
+                            label="Nome/Título da Taxa" 
+                            value={taxaNome} 
+                            onChange={setTaxaNome} 
+                            placeholder="Taxa de Despacho Postal e Liberação Alfandegária" 
+                          />
+                          <SettingsInput 
+                            label="Valor da Taxa (R$)" 
+                            value={taxaValor} 
+                            onChange={setTaxaValor} 
+                            placeholder="27.90" 
+                          />
+                        </div>
+
+                        <SettingsInput 
+                          label="Link da Página de Pagamento (Checkout da Taxa)" 
+                          value={taxaLinkPagamento} 
+                          onChange={setTaxaLinkPagamento} 
+                          placeholder="https://checkout.sualoja.com/taxa-liberacao" 
+                          hint="URL para onde o cliente será redirecionado ao clicar no botão 'Pagar Taxa de Liberação'."
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-800 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                          🛍️ Banner de Upsell & Recompra no Rastreio
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-0.5">Exibir oferta especial com cupom de desconto na tela de rastreamento do cliente.</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" checked={upsellEnabled} onChange={e => setUpsellEnabled(e.target.checked)} className="sr-only peer" />
+                        <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
+                      </label>
+                    </div>
+
+                    {upsellEnabled && (
+                      <div className="space-y-4 pt-2">
+                        <SettingsInput label="Título da Oferta" value={upsellTitle} onChange={setUpsellTitle} placeholder="Ganhe 15% OFF na sua próxima compra!" />
+                        <SettingsInput label="Descrição da Oferta / Cupom" value={upsellDescription} onChange={setUpsellDescription} placeholder="Use o cupom CLIENTE15 no checkout e aproveite frete grátis." />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <SettingsInput label="Link de Destino do Botão" value={upsellLink} onChange={setUpsellLink} placeholder="https://minhaloja.com/oferta-especial" />
+                          <SettingsInput label="URL da Imagem do Produto (Opcional)" value={upsellImageUrl} onChange={setUpsellImageUrl} placeholder="https://minhaloja.com/produto.jpg" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-800 space-y-4">
+                    <div>
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        🤖 Assistente Virtual de IA (OpenAI)
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">Chave da OpenAI utilizada no Chatbot do Rastreio e Recuperação de Vendas.</p>
+                    </div>
+                    <SettingsInput label="OpenAI API Key" value={openaiApiKey} onChange={setOpenaiApiKey} placeholder="sk-proj-xxxxxxxx" type="password" mono hint="Permite responder dúvidas dos clientes em tempo real no rastreio." />
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-800 space-y-4">
                     <div>
                       <h3 className="text-sm font-bold text-white">Serviço de E-mail (Resend)</h3>
                       <p className="text-xs text-slate-400 mt-0.5">Credenciais para envio automatizado de e-mails com códigos de rastreamento.</p>
@@ -1165,13 +2030,711 @@ export default function AdminPage() {
                     </div>
                   </div>
 
+                  <div className="pt-4 border-t border-slate-800 space-y-4">
+                    <div>
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Palette className="w-4 h-4 text-indigo-400" /> Personalização White-Label (Página de Rastreio)
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">Identidade visual da sua marca apresentada ao cliente em /rastreio/CODIGO.</p>
+                    </div>
+                    
+                    <SettingsInput label="URL do Logotipo da Loja" value={logoUrl} onChange={setLogoUrl} placeholder="https://minhaloja.com/logo.png" hint="Imagem PNG ou SVG com fundo transparente." />
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Cor Tema da Marca</label>
+                        <div className="flex items-center gap-3">
+                          <input type="color" value={primaryColor} onChange={e => setPrimaryColor(e.target.value)} className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer p-1" />
+                          <input type="text" value={primaryColor} onChange={e => setPrimaryColor(e.target.value)} className="flex-1 px-4 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-white font-mono text-sm uppercase" />
+                        </div>
+                      </div>
+                      <SettingsInput label="WhatsApp de Suporte ao Cliente" value={whatsappSuporte} onChange={setWhatsappSuporte} placeholder="5511999999999" hint="Número com DDD para o botão de ajuda." />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <SettingsInput label="Banner Promocional / Upsell (URL)" value={bannerUrl} onChange={setBannerUrl} placeholder="https://minhaloja.com/banner-desconto.jpg" hint="Imagem promocional no rodapé do rastreio." />
+                      <SettingsInput label="Link de Destino do Banner" value={bannerLink} onChange={setBannerLink} placeholder="https://minhaloja.com/colecao-nova" hint="Link aberto ao clicar no banner." />
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-800 space-y-4">
+                    <div>
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <MessageSquare className="w-4 h-4 text-emerald-400" /> WhatsApp Integration (Evolution API)
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">Disparo automático de mensagens no WhatsApp do cliente.</p>
+                    </div>
+
+                    <label className="flex items-center gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer">
+                      <input type="checkbox" checked={whatsappEnabled} onChange={e => setWhatsappEnabled(e.target.checked)} className="w-4 h-4 rounded text-indigo-600 bg-slate-900 border-slate-700 focus:ring-indigo-500" />
+                      <div>
+                        <span className="text-xs font-bold text-white block">Ativar Envio de Notificações via WhatsApp</span>
+                        <span className="text-[10px] text-slate-400 block">Envia o código de rastreio e atualizações de entrega direto no WhatsApp do comprador.</span>
+                      </div>
+                    </label>
+
+                    <SettingsInput label="Evolution API URL" value={evolutionApiUrl} onChange={setEvolutionApiUrl} placeholder="https://api.evolution.suaempresa.com" hint="Endereço base do seu servidor Evolution API." />
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <SettingsInput label="API Key (apikey)" value={evolutionApiKey} onChange={setEvolutionApiKey} placeholder="Chave de API global ou de instância" type="password" mono />
+                      <SettingsInput label="Nome da Instância" value={evolutionInstanceName} onChange={setEvolutionInstanceName} placeholder="instancia-loja-01" hint="Instância conectada ao WhatsApp." />
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-800 space-y-4">
+                    <div>
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Bot className="w-4 h-4 text-violet-400" /> Agente de IA para Recuperação de Vendas & Suporte
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">IA inteligente que responde clientes no WhatsApp e converte pedidos pendentes.</p>
+                    </div>
+
+                    <label className="flex items-center gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer">
+                      <input type="checkbox" checked={aiRecoveryEnabled} onChange={e => setAiRecoveryEnabled(e.target.checked)} className="w-4 h-4 rounded text-violet-600 bg-slate-900 border-slate-700 focus:ring-violet-500" />
+                      <div>
+                        <span className="text-xs font-bold text-white block">Ativar Agente de IA Autônomo no WhatsApp</span>
+                        <span className="text-[10px] text-slate-400 block">A IA lê mensagens de clientes com dúvidas e gera respostas empáticas e persuasivas.</span>
+                      </div>
+                    </label>
+
+                    <SettingsInput label="Chave de API da OpenAI (opcional por loja)" value={openaiApiKey} onChange={setOpenaiApiKey} placeholder="sk-proj-xxxxxxxxxxxx" type="password" mono hint="Utilizada para acionar o modelo GPT-4o-mini." />
+
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Instruções Personalizadas do Agente de IA (Prompt)</label>
+                      <textarea
+                        rows={4}
+                        value={aiPromptCustom}
+                        onChange={e => setAiPromptCustom(e.target.value)}
+                        placeholder="Ex: Trate o cliente pelo primeiro nome, ofereça um cupom de 5% de desconto para fechar o pedido e garanta que a entrega é 100% segura..."
+                        className="w-full px-4 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                      <span className="text-[10px] text-slate-500 mt-1 block">Regras e diretrizes específicas de atendimento da sua marca.</span>
+                    </div>
+                  </div>
+
                   <button type="submit" disabled={savingSettings}
-                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-50 mt-2">
-                    {savingSettings ? 'Salvando...' : 'Salvar Configurações'}
+                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-50 mt-4 cursor-pointer shadow-lg shadow-indigo-950/50 flex items-center justify-center gap-2">
+                    {savingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                    Salvar Todas as Configurações da Loja
                   </button>
                 </form>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ----------- TAB: MEMBROS E ACESSOS ----------- */}
+      {activeTab === 'members' && activeStore && (
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+          <div className="max-w-3xl mx-auto space-y-6">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-white">Membros & Acessos da Loja</h2>
+                  <p className="text-xs text-slate-400">Vincule e-mails de lojistas para acessarem esta loja</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleInviteMember} className="flex flex-col sm:flex-row gap-3 mb-6">
+                <input
+                  type="email"
+                  required
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="email.do.lojista@exemplo.com"
+                  className="flex-1 px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <button
+                  type="submit"
+                  disabled={invitingMember}
+                  className="py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-xs font-bold text-white rounded-xl transition-colors flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+                >
+                  {invitingMember ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlusCircle className="w-3.5 h-3.5" />}
+                  Vincular Lojista
+                </button>
+              </form>
+
+              {inviteSuccess && (
+                <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs rounded-xl font-semibold">
+                  ✅ Usuário vinculado com sucesso à loja!
+                </div>
+              )}
+              {inviteError && (
+                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl font-semibold">
+                  {inviteError}
+                </div>
+              )}
+
+              <div className="border border-slate-800 rounded-xl overflow-hidden">
+                {loadingMembers ? (
+                  <div className="p-8 text-center text-xs text-slate-500">Carregando membros...</div>
+                ) : storeMembers.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-slate-500">Nenhum lojista vinculado especificamente ainda. (Somente o Admin Master tem acesso).</div>
+                ) : (
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-[10px] text-slate-500 uppercase tracking-wider bg-slate-950/50">
+                        <th className="px-4 py-3 text-left font-semibold">Usuário (User ID)</th>
+                        <th className="px-4 py-3 text-center font-semibold">Função</th>
+                        <th className="px-4 py-3 text-center font-semibold">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {storeMembers.map((m: any) => (
+                        <tr key={m.id}>
+                          <td className="px-4 py-3 font-mono text-slate-300">{m.user_id}</td>
+                          <td className="px-4 py-3 text-center">
+                            <span className="bg-indigo-500/10 text-indigo-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                              {m.role || 'Lojista'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <button onClick={() => handleRemoveMember(m.id)} className="text-red-400 hover:underline text-[10px]">
+                              Remover
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+          </main>
+        </div>
+      )}
+
+      {/* ----------- DETALHE DO PEDIDO: POPUP MODAL ----------- */}
+      {selectedOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm transition-all animate-in fade-in duration-200">
+          <div className="absolute inset-0" onClick={() => setSelectedOrder(null)} />
+          
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden shadow-2xl relative z-10 animate-in slide-in-from-bottom-6 duration-300">
+            
+            {loadingDetail ? (
+              <>
+                {/* Modal Header Skeleton */}
+                <div className="p-5 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between flex-shrink-0">
+                  <div>
+                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Detalhes do Pedido</span>
+                    <div className="h-5 w-32 bg-slate-850 animate-pulse rounded-md mt-1" />
+                  </div>
+                  <button onClick={() => setSelectedOrder(null)} 
+                    className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 active:bg-slate-900 border border-slate-700/60 text-slate-400 hover:text-white transition-all shadow-md">
+                    <XCircle className="w-5 h-5" />
+                  </button>
+                </div>
+                {/* Spinner */}
+                <div className="flex-1 flex flex-col items-center justify-center py-24 text-slate-400 gap-3">
+                  <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+                  <span className="text-sm">Carregando detalhes do pedido...</span>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Modal Header */}
+                <div className="p-5 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between flex-shrink-0">
+                  <div>
+                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Detalhes do Pedido</span>
+                    <h2 className="text-xl font-bold text-white flex items-center gap-2 mt-0.5">
+                      #{selectedOrder.numero_pedido}
+                      <StatusBadge status={selectedOrder.status_pedido} />
+                      {selectedOrder.shopify_fulfillment_status === 'fulfilled' && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-400 font-semibold">Shopify: Fulfillment ✓</span>
+                      )}
+                      <span className="text-xs text-slate-500 font-normal">
+                        {new Date(selectedOrder.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </span>
+                    </h2>
+                  </div>
+                  <button onClick={() => setSelectedOrder(null)} 
+                    className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 active:bg-slate-900 border border-slate-700/60 text-slate-400 hover:text-white transition-all shadow-md">
+                    <XCircle className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Modal Body (Scrollable) */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                  
+                  {/* Header Action Section: E-mail disparos */}
+                  <div className="bg-slate-950/40 border border-slate-800/60 p-4 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Ações e Notificações</h4>
+                      <p className="text-[11px] text-slate-500 mt-0.5">Dispare comprovantes de nota fiscal e códigos de rastreamento.</p>
+                    </div>
+                    
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => {
+                          const printWindow = window.open('', '_blank');
+                          if (printWindow) {
+                            printWindow.document.write(`
+                              <!DOCTYPE html>
+                              <html lang="pt-BR">
+                                <head>
+                                  <meta charset="UTF-8" />
+                                  <title>Comprovante de Compra #${selectedOrder.numero_pedido}</title>
+                                  <style>
+                                    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #1e293b; background: #fff; max-width: 750px; margin: 0 auto; }
+                                    .header { border-bottom: 2px solid #0f172a; padding-bottom: 20px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: flex-start; }
+                                    .company-name { font-size: 20px; font-weight: bold; color: #0f172a; margin-bottom: 4px; }
+                                    .company-info { font-size: 12px; color: #64748b; line-height: 1.4; }
+                                    .doc-title { text-align: right; }
+                                    .doc-title h2 { margin: 0; font-size: 16px; color: #0f172a; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
+                                    .doc-title p { margin: 4px 0 0; font-size: 11px; color: #0284c7; font-weight: bold; }
+                                    .section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px; }
+                                    .box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; }
+                                    .box-title { font-size: 11px; font-weight: bold; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; margin-bottom: 10px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }
+                                    .row { display: flex; justify-content: space-between; font-size: 12px; margin: 4px 0; }
+                                    .row-label { color: #64748b; font-weight: 500; }
+                                    .row-val { font-weight: 600; color: #0f172a; }
+                                    .table-items { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 20px; }
+                                    .table-items th { background: #0f172a; color: #fff; padding: 10px 12px; font-size: 11px; text-transform: uppercase; text-align: left; font-weight: 700; }
+                                    .table-items td { padding: 12px; font-size: 13px; border-bottom: 1px solid #e2e8f0; color: #334155; }
+                                    .total-container { text-align: right; margin-top: 15px; padding-top: 15px; border-top: 2px solid #0f172a; font-size: 16px; font-weight: bold; color: #0f172a; }
+                                    .footer { text-align: center; margin-top: 40px; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 15px; }
+                                  </style>
+                                </head>
+                                <body>
+                                  <div class="header">
+                                    <div>
+                                      <div class="company-name">${empresaNome || 'Cultura 420'}</div>
+                                      <div class="company-info">
+                                        CNPJ: ${empresaCnpj || '40.428.379/0001-50'}<br />
+                                        ${empresaEndereco || 'Av. Paulista, 1000 - Bela Vista'}<br />
+                                        ${empresaCidade || 'São Paulo'} - ${empresaEstado || 'SP'} &bull; CEP: ${empresaCep || '01310-100'}
+                                      </div>
+                                    </div>
+                                    <div class="doc-title">
+                                      <h2>Comprovante de Compra</h2>
+                                      <p>NÃO POSSUI VALOR FISCAL</p>
+                                    </div>
+                                  </div>
+
+                                  <div class="section-grid">
+                                    <div class="box">
+                                      <div class="box-title">Dados do Cliente</div>
+                                      <div class="row"><span class="row-label">Nome:</span> <span class="row-val">${selectedOrder.customers?.nome || '—'}</span></div>
+                                      <div class="row"><span class="row-label">E-mail:</span> <span class="row-val">${selectedOrder.customers?.email || '—'}</span></div>
+                                      <div class="row"><span class="row-label">Telefone:</span> <span class="row-val">${selectedOrder.customers?.telefone || '—'}</span></div>
+                                    </div>
+
+                                    <div class="box">
+                                      <div class="box-title">Endereço de Entrega</div>
+                                      ${selectedOrder.addresses ? `
+                                        <div class="row"><span class="row-label">Logradouro:</span> <span class="row-val">${selectedOrder.addresses.logradouro || ''}, ${selectedOrder.addresses.numero || ''}</span></div>
+                                        <div class="row"><span class="row-label">Compl / Bairro:</span> <span class="row-val">${selectedOrder.addresses.complemento || ''} ${selectedOrder.addresses.bairro || ''}</span></div>
+                                        <div class="row"><span class="row-label">Cidade / UF:</span> <span class="row-val">${selectedOrder.addresses.cidade || ''}/${selectedOrder.addresses.estado || ''}</span></div>
+                                        <div class="row"><span class="row-label">CEP:</span> <span class="row-val">${selectedOrder.addresses.cep || ''}</span></div>
+                                      ` : '<div>Sem endereço de entrega.</div>'}
+                                    </div>
+                                  </div>
+
+                                  <table class="table-items">
+                                    <thead>
+                                      <tr>
+                                        <th style="width: 55%;">Produto</th>
+                                        <th style="width: 15%; text-align: center;">Qtd</th>
+                                        <th style="width: 15%; text-align: right;">Unitário</th>
+                                        <th style="width: 15%; text-align: right;">Total</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      ${selectedOrder.itens?.map((item: any) => `
+                                        <tr>
+                                          <td>
+                                            <div style="font-weight: 600;">${item.title}</div>
+                                            ${item.sku ? `<div style="font-size: 10px; color: #64748b;">SKU: ${item.sku}</div>` : ''}
+                                          </td>
+                                          <td style="text-align: center;">${item.quantity}</td>
+                                          <td style="text-align: right;">R$ ${parseFloat(item.price).toFixed(2)}</td>
+                                          <td style="text-align: right; font-weight: 600;">R$ ${(item.quantity * parseFloat(item.price)).toFixed(2)}</td>
+                                        </tr>
+                                      `).join('')}
+                                    </tbody>
+                                  </table>
+
+                                  <div class="total-container">
+                                    TOTAL DO PEDIDO: R$ ${selectedOrder.valor_total?.toFixed(2) || '0.00'}
+                                  </div>
+
+                                  <div class="footer">
+                                    <p>Código de Rastreamento: <strong>${selectedOrder.trackings?.codigo_rastreio || 'Pendente'}</strong></p>
+                                    <p>Este comprovante é gerado de forma automática por Rastreio.IO &bull; Obrigado pela preferência!</p>
+                                  </div>
+                                </body>
+                              </html>
+                            `);
+                            printWindow.document.close();
+                            printWindow.print();
+                          }
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-slate-200 border border-slate-700/80 rounded-xl transition-all text-xs font-semibold shadow-md"
+                      >
+                        <FileText className="w-3.5 h-3.5" /> Nota de Compra
+                      </button>
+
+                      {selectedOrder.trackings?.codigo_rastreio && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button onClick={() => handleSendNotification('nota')}
+                            disabled={sendingEmail || emailSent}
+                            className={`flex items-center gap-1.5 px-3 py-2 border rounded-xl transition-all text-xs font-semibold shadow-md ${
+                              emailSent
+                                ? 'bg-emerald-600/20 border-emerald-500/30 text-emerald-400 cursor-default'
+                                : 'bg-slate-800 hover:bg-slate-700 active:bg-slate-900 border-slate-700/80 text-slate-200 disabled:opacity-55'
+                            }`}>
+                            {sendingEmail ? (
+                              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Enviando...</>
+                            ) : emailSent ? (
+                              <><CheckCircle2 className="w-3.5 h-3.5" /> Enviado!</>
+                            ) : (
+                              <><Mail className="w-3.5 h-3.5 text-blue-400" /> Enviar Nota</>
+                            )}
+                          </button>
+
+                          <button onClick={() => handleSendNotification('rastreio')}
+                            disabled={sendingEmail || emailSent}
+                            className={`flex items-center gap-1.5 px-3 py-2 border rounded-xl transition-all text-xs font-semibold shadow-md ${
+                              emailSent
+                                ? 'bg-emerald-600/20 border-emerald-500/30 text-emerald-400 cursor-default'
+                                : 'bg-slate-800 hover:bg-slate-700 active:bg-slate-900 border-slate-700/80 text-slate-200 disabled:opacity-55'
+                            }`}>
+                            {sendingEmail ? (
+                              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Enviando...</>
+                            ) : emailSent ? (
+                              <><CheckCircle2 className="w-3.5 h-3.5" /> Enviado!</>
+                            ) : (
+                              <><Send className="w-3.5 h-3.5 text-indigo-400" /> Enviar Rastreio</>
+                            )}
+                          </button>
+
+                          <button onClick={() => handleSendNotification('ambos')}
+                            disabled={sendingEmail || emailSent}
+                            className={`flex items-center gap-2 px-4 py-2 border rounded-xl transition-all text-xs font-semibold shadow-md ${
+                              emailSent
+                                ? 'bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 cursor-default'
+                                : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 border-indigo-700/30 text-white disabled:opacity-55'
+                            }`}>
+                            {sendingEmail ? (
+                              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Enviando...</>
+                            ) : emailSent ? (
+                              <><CheckCheck className="w-3.5 h-3.5" /> E-mails + Shopify OK!</>
+                            ) : (
+                              <><Zap className="w-3.5 h-3.5" /> Enviar Rastreio + Nota</>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {emailError && (
+                    <div className="w-full p-3.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-xs text-rose-400 font-semibold flex items-center gap-2">
+                      <XCircle className="w-4 h-4 shrink-0" />
+                      <span>{emailError}</span>
+                    </div>
+                  )}
+
+                  {/* Informações Básicas do Cliente e Endereço */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {/* Cliente */}
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3 shadow-sm">
+                      <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5 border-b border-slate-800 pb-2">
+                        <User className="w-3.5 h-3.5 text-indigo-400" /> Dados do Cliente
+                      </h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <InfoRow label="Nome" value={selectedOrder.customers?.nome} />
+                        <InfoRow label="E-mail" value={selectedOrder.customers?.email} mono />
+                        {selectedOrder.customers?.telefone && <InfoRow label="Telefone" value={selectedOrder.customers.telefone} />}
+                        {selectedOrder.customers?.cpf && <InfoRow label="CPF" value={selectedOrder.customers.cpf} mono />}
+                      </div>
+                    </div>
+
+                    {/* Endereço */}
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3 shadow-sm">
+                      <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5 border-b border-slate-800 pb-2">
+                        <MapPin className="w-3.5 h-3.5 text-indigo-400" /> Endereço de Entrega
+                      </h3>
+                      {selectedOrder.addresses ? (
+                        <div className="text-xs text-slate-300 space-y-1">
+                          <p className="font-semibold">{selectedOrder.addresses.logradouro}{selectedOrder.addresses.numero ? `, ${selectedOrder.addresses.numero}` : ''}</p>
+                          {selectedOrder.addresses.complemento && <p className="text-slate-400">{selectedOrder.addresses.complemento}</p>}
+                          {selectedOrder.addresses.bairro && <p className="text-slate-400">{selectedOrder.addresses.bairro}</p>}
+                          <p>{selectedOrder.addresses.cidade} / {selectedOrder.addresses.estado}</p>
+                          <p className="font-mono text-slate-400">CEP: {selectedOrder.addresses.cep}</p>
+                        </div>
+                      ) : <p className="text-xs text-slate-500">Sem endereço cadastrado.</p>}
+                    </div>
+                  </div>
+
+                  {/* Itens do Pedido */}
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3 shadow-sm">
+                    <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5 border-b border-slate-800 pb-2">
+                      <FileText className="w-3.5 h-3.5 text-indigo-400" /> Itens do Pedido
+                    </h3>
+                    <div className="divide-y divide-slate-800/80">
+                      {selectedOrder.itens?.map((item, idx) => (
+                        <div key={idx} className="py-3 flex items-center justify-between text-xs">
+                          <div>
+                            <p className="font-semibold text-white">{item.title}</p>
+                            <p className="text-[10px] text-slate-500 mt-1">Qtd: {item.quantity} × R$ {item.price} · SKU: {item.sku || 'N/A'}</p>
+                          </div>
+                          <span className="font-semibold text-white">R$ {(item.quantity * parseFloat(item.price)).toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="pt-3 border-t border-slate-800 flex justify-between text-sm font-bold text-white">
+                      <span>Total</span>
+                      <span>R$ {selectedOrder.valor_total?.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  {/* Rastreio Eventos e Histórico */}
+                  {selectedOrder.trackings && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      {/* Registrar Evento */}
+                      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3 shadow-sm">
+                        <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5 border-b border-slate-800 pb-2">
+                          <PlusCircle className="w-3.5 h-3.5 text-indigo-400" /> Registrar Novo Evento
+                        </h3>
+                        {updateError && <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-2.5 rounded-lg">{updateError}</div>}
+                        <form onSubmit={handleAddStatus} className="space-y-3.5">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Status</label>
+                              <select value={updateStatus} onChange={e => setUpdateStatus(e.target.value)}
+                                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white font-semibold">
+                                <option value="postado">Postado</option>
+                                <option value="em_transito">Em Trânsito</option>
+                                <option value="saiu_para_entrega">Saiu para Entrega</option>
+                                <option value="entregue">Entregue</option>
+                                <option value="extraviado">Extraviado</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Localidade</label>
+                              <input type="text" required value={updateLocal} onChange={e => setUpdateLocal(e.target.value)}
+                                placeholder="Ex: São Paulo, SP"
+                                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white" />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Descrição</label>
+                            <input type="text" required value={updateDesc} onChange={e => setUpdateDesc(e.target.value)}
+                              placeholder="Ex: Objeto encaminhado para Unidade de Tratamento"
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Data e Hora (Opcional)</label>
+                            <input type="datetime-local" value={updateDate} onChange={e => setUpdateDate(e.target.value)}
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white font-mono" />
+                            <span className="text-[9px] text-slate-500 mt-0.5 block">Deixe vazio para usar a data/hora atual.</span>
+                          </div>
+                          <button type="submit" disabled={submittingUpdate}
+                            className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-semibold disabled:opacity-50 transition-colors text-white shadow-md cursor-pointer flex items-center justify-center gap-1.5">
+                            {submittingUpdate ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlusCircle className="w-3.5 h-3.5" />}
+                            Salvar Evento
+                          </button>
+                        </form>
+                      </div>
+
+                      {/* Histórico */}
+                      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3 shadow-sm">
+                        <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5 border-b border-slate-800 pb-2">
+                          <Clock className="w-3.5 h-3.5 text-indigo-400" /> Histórico de Movimentações
+                        </h3>
+                        <div className="relative border-l border-slate-800 ml-2.5 pl-4 space-y-4 max-h-[300px] overflow-y-auto pr-1">
+                          {selectedOrder.trackings.historico?.map((ev: any, realIdx: number) => ({ ev, realIdx })).reverse().map(({ ev, realIdx }) => (
+                            <div key={realIdx} className="relative text-xs group">
+                              <div className="absolute -left-[21px] top-0.5 w-3.5 h-3.5 rounded-full bg-slate-800 border border-slate-900 flex items-center justify-center">
+                                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                              </div>
+
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="space-y-0.5 flex-1 min-w-0">
+                                  <p className="font-semibold text-slate-200 leading-snug">{ev.descricao}</p>
+                                  <p className="text-[10px] text-slate-500 flex items-center gap-2 flex-wrap">
+                                    <span className="font-mono text-slate-400">{new Date(ev.data).toLocaleString('pt-BR')}</span>
+                                    <span>·</span>
+                                    <span className="text-slate-300 font-medium">{ev.local}</span>
+                                    <span className="px-1.5 py-0.2 rounded bg-slate-800 text-[9px] font-mono text-indigo-300 uppercase">{ev.status}</span>
+                                  </p>
+                                </div>
+
+                                {/* Botões de Ação Individual (Editar / Excluir) */}
+                                <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity shrink-0">
+                                  <button
+                                    title="Editar Evento"
+                                    onClick={() => {
+                                      setEditingEventIndex(realIdx);
+                                      setEditStatus(ev.status || 'em_transito');
+                                      setEditDesc(ev.descricao || '');
+                                      setEditLocal(ev.local || '');
+                                      // Formata a data para datetime-local input
+                                      const d = new Date(ev.data);
+                                      const tzOffset = d.getTimezoneOffset() * 60000;
+                                      const localISOTime = (new Date(d.getTime() - tzOffset)).toISOString().slice(0, 16);
+                                      setEditDate(localISOTime);
+                                    }}
+                                    className="p-1 hover:bg-indigo-500/20 text-slate-400 hover:text-indigo-400 rounded transition-colors cursor-pointer"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                  
+                                  <button
+                                    title="Excluir Evento"
+                                    onClick={() => handleDeleteEvent(realIdx)}
+                                    disabled={deletingIndex === realIdx}
+                                    className="p-1 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded transition-colors cursor-pointer disabled:opacity-50"
+                                  >
+                                    {deletingIndex === realIdx ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Modal de Edição de Evento Individual */}
+                  {editingEventIndex !== null && (
+                    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                          <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
+                            <Pencil className="w-4 h-4 text-indigo-400" /> Editar Evento do Histórico
+                          </h3>
+                          <button onClick={() => setEditingEventIndex(null)} className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        <form onSubmit={handleEditEventSubmit} className="space-y-3.5">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Status</label>
+                              <select value={editStatus} onChange={e => setEditStatus(e.target.value)}
+                                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white font-semibold">
+                                <option value="postado">Postado</option>
+                                <option value="em_transito">Em Trânsito</option>
+                                <option value="saiu_para_entrega">Saiu para Entrega</option>
+                                <option value="entregue">Entregue</option>
+                                <option value="extraviado">Extraviado</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Localidade</label>
+                              <input type="text" required value={editLocal} onChange={e => setEditLocal(e.target.value)}
+                                placeholder="Ex: São Paulo, SP"
+                                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white" />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Descrição</label>
+                            <input type="text" required value={editDesc} onChange={e => setEditDesc(e.target.value)}
+                              placeholder="Ex: Objeto encaminhado..."
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white" />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Data e Hora do Evento</label>
+                            <input type="datetime-local" required value={editDate} onChange={e => setEditDate(e.target.value)}
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white font-mono" />
+                          </div>
+
+                          <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                            <button type="button" onClick={() => setEditingEventIndex(null)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl">
+                              Cancelar
+                            </button>
+                            <button type="submit" disabled={submittingEdit} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white rounded-xl flex items-center gap-1.5 disabled:opacity-50">
+                              {submittingEdit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                              Salvar Alterações
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Modal de Detalhes da Conversa de Recuperação com a IA */}
+                  {selectedAiConvModal && (
+                    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 rounded-xl bg-violet-500/10 text-violet-400">
+                              <Bot className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
+                                Conversa de Recuperação · {selectedAiConvModal.customer_name || 'Cliente'}
+                              </h3>
+                              <p className="text-[11px] text-slate-400 font-mono">{selectedAiConvModal.customer_phone}</p>
+                            </div>
+                          </div>
+                          <button onClick={() => setSelectedAiConvModal(null)} className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto space-y-3 p-1">
+                          {Array.isArray(selectedAiConvModal.mensagens) && selectedAiConvModal.mensagens.length > 0 ? (
+                            selectedAiConvModal.mensagens.map((msg: any, mIdx: number) => (
+                              <div key={mIdx} className={`flex ${msg.sender === 'customer' ? 'justify-start' : msg.sender === 'system' ? 'justify-center' : 'justify-end'}`}>
+                                {msg.sender === 'system' ? (
+                                  <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] px-3 py-1.5 rounded-full font-bold">
+                                    {msg.text}
+                                  </div>
+                                ) : (
+                                  <div className={`max-w-[85%] p-3.5 rounded-2xl text-xs ${
+                                    msg.sender === 'customer'
+                                      ? 'bg-slate-950 border border-slate-800 text-slate-200'
+                                      : 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-md'
+                                  }`}>
+                                    <span className="text-[9px] font-bold block uppercase tracking-wider mb-1 opacity-75">
+                                      {msg.sender === 'customer' ? '👤 Cliente' : '🤖 Agente de IA'}
+                                    </span>
+                                    <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                                    {msg.timestamp && (
+                                      <span className="text-[9px] block text-right mt-1 opacity-60 font-mono">
+                                        {new Date(msg.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ))
+                          ) : (
+                            <div className="py-8 text-center text-slate-500 text-xs">
+                              Aguardando envio ou resposta do cliente via WhatsApp.
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="border-t border-slate-800 pt-3 flex items-center justify-between text-xs">
+                          <span className="text-slate-400">Status: <strong className="text-white capitalize">{selectedAiConvModal.status}</strong></span>
+                          <button onClick={() => setSelectedAiConvModal(null)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold">
+                            Fechar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              </>
+            )}
+
           </div>
         </div>
       )}

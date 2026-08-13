@@ -36,6 +36,7 @@ export interface ShopifyOrderWebhook {
   total_price: string;
   customer?: ShopifyCustomer;
   shipping_address?: ShopifyAddress;
+  billing_address?: ShopifyAddress;
   line_items: ShopifyLineItem[];
   note_attributes?: ShopifyNoteAttribute[];
   financial_status?: string;

@@ -114,6 +114,7 @@ export async function GET(req: NextRequest) {
         numero_pedido,
         status_pedido,
         created_at,
+        raw_payload,
         customers ( nome, email ),
         trackings ( codigo_rastreio, status, email_enviado, email_enviado_em, shopify_synced )
       `)
@@ -124,11 +125,21 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Erro ao buscar dados.' }, { status: 500 });
     }
 
-    const formatted = (orders || []).map((o: any) => ({
-      ...o,
-      customers: Array.isArray(o.customers) ? o.customers[0] : o.customers,
-      trackings: Array.isArray(o.trackings) ? o.trackings[0] : o.trackings,
-    }));
+    const formatted = (orders || []).map((o: any) => {
+      const cust = Array.isArray(o.customers) ? o.customers[0] : o.customers;
+      const trk = Array.isArray(o.trackings) ? o.trackings[0] : o.trackings;
+      
+      return {
+        id: o.id,
+        numero_pedido: o.numero_pedido,
+        status_pedido: o.status_pedido,
+        created_at: o.created_at,
+        customers: cust,
+        trackings: trk,
+        nota_enviada: !!o.raw_payload?.nota_enviada,
+        nota_enviada_em: o.raw_payload?.nota_enviada_em || null,
+      };
+    });
 
     return NextResponse.json(formatted);
   } catch (err: any) {

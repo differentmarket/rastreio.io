@@ -91,9 +91,98 @@ export async function getShopifyConfig(): Promise<ShopifyConfig> {
 }
 
 /**
- * Envia o código de rastreamento de volta para o Shopify criando um Fulfillment.
+ * Detecta a transportadora com base no nome do método de envio (shipping line title) do pedido.
+ * Retorna { company, url } para uso no fulfillment da Shopify.
  */
-export async function enviarRastreioShopify(shopifyOrderId: number, codigoRastreio: string): Promise<boolean> {
+function detectarTransportadora(shippingMethodTitle: string | null, codigoRastreio: string): { company: string; url: string } {
+  const title = (shippingMethodTitle || '').toLowerCase();
+  const codigo = (codigoRastreio || '').toUpperCase();
+
+  // Correios — formatos: AA000000000BR (13 chars) ou por nome do método
+  const isCorreiosCode = /^[A-Z]{2}\d{9}[A-Z]{2}$/.test(codigo);
+  if (
+    isCorreiosCode ||
+    title.includes('correio') ||
+    title.includes('pac') ||
+    title.includes('sedex') ||
+    title.includes('mini envio') ||
+    title.includes('carta registrada')
+  ) {
+    return {
+      company: 'Correios',
+      url: `https://www.correios.com.br/rastreamento?codigo=${codigoRastreio}`,
+    };
+  }
+
+  // Jadlog
+  if (title.includes('jadlog') || title.includes('jad log')) {
+    return {
+      company: 'Jadlog',
+      url: `https://jadlog.com.br/siteinfo/tracking.jad?cte=${codigoRastreio}`,
+    };
+  }
+
+  // Total Express
+  if (title.includes('total express') || title.includes('totalexpress')) {
+    return {
+      company: 'Total Express',
+      url: `https://totalexpress.com.br/rastreio?codigo=${codigoRastreio}`,
+    };
+  }
+
+  // Azul Cargo
+  if (title.includes('azul') || title.includes('azul cargo')) {
+    return {
+      company: 'Azul Cargo',
+      url: `https://www.azulcargo.com.br/home/rastreio?awb=${codigoRastreio}`,
+    };
+  }
+
+  // Loggi
+  if (title.includes('loggi')) {
+    return {
+      company: 'Loggi',
+      url: `https://www.loggi.com/rastreador/?q=${codigoRastreio}`,
+    };
+  }
+
+  // J&T Express
+  if (title.includes('j&t') || title.includes('j e t') || title.includes('jt express')) {
+    return {
+      company: 'J&T Express',
+      url: `https://www.jtexpress.com.br/index/query/gzquery.html?bills=${codigoRastreio}`,
+    };
+  }
+
+  // Flash Courier
+  if (title.includes('flash')) {
+    return {
+      company: 'Flash Courier',
+      url: `https://flashcourier.com.br/rastreio/${codigoRastreio}`,
+    };
+  }
+
+  let appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://rastreio-io.vercel.app').trim().replace(/\/+$/, '').replace(/\/rastreio$/, '');
+  if (!appUrl || appUrl.includes('localhost') || appUrl.includes('ri7o2sjad')) {
+    appUrl = 'https://rastreio-io.vercel.app';
+  }
+  return {
+    company: 'Rastreio Próprio',
+    url: `${appUrl}/rastreio/${codigoRastreio}`,
+  };
+}
+
+/**
+ * Envia o código de rastreamento de volta para o Shopify criando um Fulfillment.
+ * @param shopifyOrderId   ID numérico do pedido na Shopify
+ * @param codigoRastreio   Código de rastreio
+ * @param shippingMethod   Título do método de envio selecionado pelo cliente (ex: "PAC", "Jadlog")
+ */
+export async function enviarRastreioShopify(
+  shopifyOrderId: number,
+  codigoRastreio: string,
+  shippingMethod?: string | null
+): Promise<boolean> {
   const config = await getShopifyConfig();
 
   if (!config.domain || !config.token || config.domain.includes('mock-store')) {
@@ -125,7 +214,7 @@ export async function enviarRastreioShopify(shopifyOrderId: number, codigoRastre
     
     // Filtra o primeiro que não esteja concluído
     const activeFo = fulfillmentOrders.find(
-      (fo: any) => fo.status === 'unfulfilled' || fo.status === 'in_progress'
+      (fo: any) => fo.status === 'open' || fo.status === 'in_progress'
     );
 
     if (!activeFo) {
@@ -133,24 +222,32 @@ export async function enviarRastreioShopify(shopifyOrderId: number, codigoRastre
       return false;
     }
 
-    const host = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3002';
-    const trackingUrl = `${host}/rastreio/${codigoRastreio}`;
+    // Detectar transportadora automaticamente
+    const transportadora = detectarTransportadora(shippingMethod || null, codigoRastreio);
 
-    // 2. Criar o Fulfillment
+    console.log(`[Shopify] Usando transportadora: ${transportadora.company} para pedido ${shopifyOrderId}`);
+
+    // Mapear os itens a serem atendidos
+    const foLineItems = (activeFo.line_items || []).map((li: any) => ({
+      id: li.id,
+      quantity: li.fulfillable_quantity || li.quantity || 1,
+    }));
+
+    // 2. Criar o Fulfillment com carrier correto
     const fulfillmentUrl = `https://${cleanDomain}/admin/api/2024-10/fulfillments.json`;
     const payload = {
       fulfillment: {
-        message: 'Código de rastreamento próprio gerado.',
-        notify_customer: true,
+        message: `Pedido enviado via ${transportadora.company}.`,
+        notify_customer: false, // Notificamos via Resend — evita e-mail duplicado
         tracking_info: {
           number: codigoRastreio,
-          url: trackingUrl,
-          company: 'Rastreio Próprio',
+          url: transportadora.url,
+          company: transportadora.company,
         },
         line_items_by_fulfillment_order: [
           {
             fulfillment_order_id: activeFo.id,
-            fulfillment_order_line_items: [],
+            ...(foLineItems.length > 0 && { fulfillment_order_line_items: foLineItems }),
           },
         ],
       },

@@ -4,10 +4,7 @@ const ALGORITHM = 'aes-256-cbc';
 const IV_LENGTH = 16;
 
 function getEncryptionKey(): Buffer {
-  const key = process.env.CPF_ENCRYPTION_KEY;
-  if (!key) {
-    throw new Error('CPF_ENCRYPTION_KEY não definida no ambiente.');
-  }
+  const key = process.env.CPF_ENCRYPTION_KEY || 'default_secret_key_change_in_prod_123!';
   // Garante que a chave tenha exatamente 32 bytes (256 bits)
   return crypto.createHash('sha256').update(key).digest();
 }

@@ -12,8 +12,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Parâmetros inválidos.' }, { status: 400 });
   }
 
-  const clientId = process.env.SHOPIFY_CLIENT_ID || '';
-  const clientSecret = process.env.SHOPIFY_CLIENT_SECRET || '';
+  // Remove BOM (\uFEFF) que o PowerShell adiciona ao salvar env vars
+  const clientId = (process.env.SHOPIFY_CLIENT_ID || '').replace(/^\uFEFF/, '').trim();
+  const clientSecret = (process.env.SHOPIFY_CLIENT_SECRET || '').replace(/^\uFEFF/, '').trim();
 
   // Trocar o code pelo access_token permanente
   const tokenRes = await fetch(`https://${shop}/admin/oauth/access_token`, {

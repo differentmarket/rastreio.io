@@ -227,4 +227,52 @@ npx vercel deploy --prod --force
 
 ---
 
+## 🧠 8. Histórico de Decisões, Correções & Evolução de Features
+
+### 8.1 Correção de Inconsistências de Envio e Concorrência (Resend)
+- **Descoberta:** Quando disparado o tipo `ambos` (Nota + Rastreio), a execução sequencial síncrona fazia com que se um e-mail falhasse (ex: rate-limit ou timeout), todo o processo era abortado e o segundo e-mail não era enviado.
+- **Decisão:** Separou-se os dois fluxos de envio em blocos de exceção `try/catch` independentes no backend, agrupados em execução paralela assíncrona com `Promise.all`. Agora, a falha do envio de um e-mail não impede a entrega do outro, e o backend retorna um diagnóstico detalhado para cada e-mail.
+
+### 8.2 Otimização da UI e Resets de Estados no Admin
+- **Problema:** O clique nos botões desabilitava a interface de forma permanente se ocorressem erros não tratados ou após um envio concluído (devido ao estado `sendingEmail` genérico).
+- **Decisão:** Foram criados estados granulares e exclusivos de loading/sucesso para cada ação (`sendingNota`/`notaSent`, `sendingRastreio`/`rastreioSent` e `sendingAmbos`/`ambosSent`). Adicionou-se uma rotina de auto-reset com `setTimeout` (3 segundos para sucesso e 4 segundos para erros), garantindo que a UI recupere o controle e fique 100% clicável de forma resiliente.
+
+### 8.3 Fulfillment Automático Shopify
+- **Decisão:** A rota de envio individual agora chama `enviarRastreioShopify` integrando os dados de itens de atendimento e o método de entrega selecionado no checkout (lido do payload de dados). Caso o processamento na Shopify seja concluído com sucesso, o status `shopify_synced` é gravado no Supabase.
+
+### 8.4 Visualização Separada de Notificações (Rastreio e Nota)
+- **Decisão:** O lojista solicitou poder acompanhar o andamento individual de cada e-mail. Rebatizamos o indicador único na listagem da esquerda e dividimos a coluna de e-mail na Fila em duas: **Rastreio** e **Nota Compra**, com status explícitos `ENVIADO` ou `PENDENTE` renderizados em badges com design moderno.
+
+### 8.5 Reenvio de Rastreio Manual Desbloqueado para Testes
+- **Descoberta:** O lojista não conseguia reenviar o rastreio no seu pedido de teste porque a rota individual continha a trava `tracking.email_enviado && !force`.
+- **Decisão:** Como a rota `/api/pedidos/[id]/enviar-notificacao` é um endpoint manual e acionado exclusivamente por ação humana no painel admin, removemos a trava de re-envio. O lojista agora pode disparar e testar o envio de rastreio de um mesmo pedido quantas vezes desejar.
+
+### 8.6 Correção do Status de Fulfillment Order da Shopify (unfulfilled vs open)
+- **Descoberta:** O processamento automático falhava silenciosamente e os pedidos permaneciam como "Não processado" na Shopify. A resposta da API de ordens de serviço (`fulfillment_orders.json`) retornava ordens de atendimento ativas com status `"open"`. O código original do Rastreio.io buscava apenas por status `"unfulfilled"` ou `"in_progress"`, resultando em falha ao localizar a ordem ativa.
+- **Decisão:** Alteramos o filtro de busca em `lib/shopifyService.ts` para verificar por `fo.status === 'open' || fo.status === 'in_progress'`. Isso alinhou a integração à especificação moderna do ciclo de vida de Fulfillment Orders do Shopify REST API e resolveu em definitivo o processamento automático de pedidos.
+
+### 8.7 Popup Modal Reativo para Detalhes do Pedido
+- **Solicitação:** Ao rolar a lista de pedidos no painel administrativo e clicar em um item, o painel de detalhes abria fixo na coluna lateral direita, obrigando o lojista a rolar a página de volta até o topo para visualizar as informações.
+- **Decisão:** Reestruturamos a aba de pedidos para utilizar a lista em largura cheia (`w-full`) e transformamos o painel de detalhes em um **Popup Modal Flutuante** centralizado com desfoque de fundo (`backdrop-blur-sm`), carregamento reativo (skeleton/spinner controlado por `loadingDetail`), rolagem interna independente, ações de e-mail e botão de fechar.
+
+### 8.8 Disparo de E-mails em Lote Filtrado ("Exceto Hoje")
+- **Solicitação:** Opção de disparar e-mails de rastreio e nota em massa para todos os pedidos acumulados na fila, **exceto os pedidos criados no dia atual** (evitando notificar pedidos recém-criados que ainda estão em processamento).
+- **Decisão:** Atualizamos o backend em `/api/pedidos/enviar-lote` com suporte ao parâmetro `periodo: 'exceto_hoje'`, filtrando pedidos com `created_at < inicio_do_dia_atual`. Adicionamos os botões **`⏳ Exceto Hoje`** e **`⚡ Disparar (Exceto Pedidos de Hoje)`** no painel de disparos da aba Pedidos e no topo da aba Fila de E-mails.
+
+### 8.9 Correção da URL de Rastreio nos E-mails e Identidade Visual (Rastreio.IO)
+- **Descoberta:** Os e-mails enviados omitiam a rota `/rastreio/` no link e utilizavam URLs de preview temporárias da Vercel (`https://rastreio-ri7o2sjad...`), enquanto a aba do navegador exibia o título genérico *"Create Next App"*.
+- **Decisão:** Implementamos a sanitização de `appUrl` em todas as rotas (`enviar-lote`, `enviar-notificacao`, `testar-email`, `enviar-rastreio` e `shopifyService`), garantindo o formato canônico `https://rastreio-io.vercel.app/rastreio/[codigo]`. Atualizamos `app/layout.tsx` com o título oficial **"Rastreio.IO — Sistema Inteligente de Rastreamento de Pedidos"** e idioma `pt-BR`.
+
+### 8.10 Harmonização Profissional das Mensagens de Histórico de Logística
+- **Descoberta:** O histórico inicial de rastreamento criado na sincronização exibia termos internos para o cliente final, como `"Pedido sincronizado da Shopify e aguardando postagem."` e localização `"Logística Interna"`.
+- **Decisão:** Atualizamos a criação de eventos no webhook e sincronizador da Shopify para registrar a mensagem profissional **`"Pedido confirmado e em preparação para envio."`** com localização **`"Centro de Distribuição"`**. Adicionamos a função `sanitizeHistory()` na rota de consulta pública (`/api/rastreio/[codigo]`) para formatar automaticamente registros passados já gravados no Supabase.
+
+### 8.11 Arquitetura SaaS Multi-Tenant (Múltiplas Lojas Integradas)
+- **Implementação:** Evoluiu o Rastreio.IO para uma plataforma SaaS onde múltiplos lojistas/Shopifys podem se integrar.
+- **Tabela `stores`**: Criada a tabela DDL em `supabase/saas_multi_tenant_schema.sql` para gerenciar lojas integradas (`nome_loja`, `shopify_domain`, `shopify_access_token`, `status`, dados cadastrais).
+- **Relacionamentos**: Adicionada a coluna `store_id` nas tabelas `orders` e `trackings`.
+- **UI & Gestão Super-Admin**: Adicionada a aba **"Lojas SaaS"** e o menu **Seletor de Loja (Store Switcher)** no topo do painel admin em `app/admin/page.tsx`, com modal **Conectar Nova Loja Shopify** e APIs `/api/stores`.
+
+---
+
 > **Dica para Economia de Tokens com IAs**: Ao iniciar uma nova instrução com um assistente de IA, mencione apenas: *"Consulte o arquivo `ARCHITECTURE.md` para entender a estrutura e convenções antes de editar."*

@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  const clientId = process.env.SHOPIFY_CLIENT_ID || '';
+  // Remove BOM (﻿, \uFEFF) e espaços que o PowerShell/env pode adicionar
+  const clientId = (process.env.SHOPIFY_CLIENT_ID || '').replace(/^\uFEFF/, '').trim();
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://rastreio-io.vercel.app';
   const shop = req.nextUrl.searchParams.get('shop') || 'lojazona420.myshopify.com';
 

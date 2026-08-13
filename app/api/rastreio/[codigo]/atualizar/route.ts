@@ -19,26 +19,7 @@ export async function POST(
     }
 
     const body = await req.json();
-    const { status, descricao, local } = body;
-
-    if (!status || !descricao || !local) {
-      return NextResponse.json(
-        { error: 'Parâmetros inválidos. Status, descrição e local são obrigatórios.' },
-        { status: 400 }
-      );
-    }
-
-    // Bypass com dados mockados para simular atualização de status
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    if (supabaseUrl.includes('mock-project')) {
-      const novoEvento = {
-        status,
-        data: new Date().toISOString(),
-        descricao,
-        local,
-      };
-      return NextResponse.json({ ok: true, tracking: { status, historico: [novoEvento] } });
-    }
+    const { action = 'add', eventIndex, status, descricao, local, data: customDate } = body;
 
     // 2. Buscar rastreamento atual
     const { data: tracking, error: fetchError } = await supabaseAdmin
@@ -54,22 +35,52 @@ export async function POST(
       );
     }
 
-    // 3. Atualizar o histórico
-    const novoEvento = {
-      status,
-      data: new Date().toISOString(),
-      descricao,
-      local,
-    };
+    let historicoAtual = Array.isArray(tracking.historico) ? [...tracking.historico] : [];
+    let novoStatus = status || tracking.status;
 
-    const historicoAtual = Array.isArray(tracking.historico) ? tracking.historico : [];
-    const novoHistorico = [...historicoAtual, novoEvento];
+    if (action === 'delete') {
+      if (typeof eventIndex !== 'number' || eventIndex < 0 || eventIndex >= historicoAtual.length) {
+        return NextResponse.json({ error: 'Índice do evento para exclusão é inválido.' }, { status: 400 });
+      }
+      historicoAtual.splice(eventIndex, 1);
+      if (historicoAtual.length > 0) {
+        novoStatus = historicoAtual[historicoAtual.length - 1].status || novoStatus;
+      }
+    } else if (action === 'edit') {
+      if (typeof eventIndex !== 'number' || eventIndex < 0 || eventIndex >= historicoAtual.length) {
+        return NextResponse.json({ error: 'Índice do evento para edição é inválido.' }, { status: 400 });
+      }
+      if (!status || !descricao || !local) {
+        return NextResponse.json({ error: 'Status, descrição e local são obrigatórios.' }, { status: 400 });
+      }
+
+      historicoAtual[eventIndex] = {
+        status,
+        descricao,
+        local,
+        data: customDate ? new Date(customDate).toISOString() : historicoAtual[eventIndex].data || new Date().toISOString(),
+      };
+      novoStatus = status;
+    } else {
+      // action === 'add'
+      if (!status || !descricao || !local) {
+        return NextResponse.json({ error: 'Status, descrição e local são obrigatórios.' }, { status: 400 });
+      }
+      const novoEvento = {
+        status,
+        data: customDate ? new Date(customDate).toISOString() : new Date().toISOString(),
+        descricao,
+        local,
+      };
+      historicoAtual.push(novoEvento);
+      novoStatus = status;
+    }
 
     const { error: updateError } = await supabaseAdmin
       .from('trackings')
       .update({
-        status,
-        historico: novoHistorico,
+        status: novoStatus,
+        historico: historicoAtual,
       })
       .eq('id', tracking.id);
 
@@ -84,10 +95,10 @@ export async function POST(
     // Sincroniza o novo status com o Shopify adicionando/atualizando tags no pedido
     const orderData: any = Array.isArray(tracking.orders) ? tracking.orders[0] : tracking.orders;
     if (orderData && orderData.shopify_order_id) {
-      await atualizarStatusPedidoShopify(orderData.shopify_order_id, status);
+      await atualizarStatusPedidoShopify(orderData.shopify_order_id, novoStatus);
     }
 
-    return NextResponse.json({ ok: true, tracking: { status, historico: novoHistorico } });
+    return NextResponse.json({ ok: true, tracking: { status: novoStatus, historico: historicoAtual } });
   } catch (err: any) {
     console.error('Erro na rota de atualização:', err);
     return NextResponse.json(

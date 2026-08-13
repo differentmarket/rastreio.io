@@ -158,6 +158,21 @@ export async function POST(req: NextRequest) {
           if (isMock) {
             customerId = `mock-cust-${cust.id}`;
           } else {
+            // Extrair CPF (shipping_address.company, note_attributes ou tags)
+            let cpf = '';
+            if (shopifyOrder.shipping_address?.company) {
+              const cleanC = shopifyOrder.shipping_address.company.replace(/\D/g, '');
+              if (cleanC.length === 11 || cleanC.length === 14) cpf = cleanC;
+            }
+            if (!cpf && shopifyOrder.note_attributes) {
+              const attr = shopifyOrder.note_attributes.find((a: any) => ['cpf', 'documento', 'document'].includes(a.name.toLowerCase()));
+              if (attr?.value) cpf = attr.value.replace(/\D/g, '');
+            }
+
+            const { criptografar, gerarCpfHash } = require('@/lib/criptografia');
+            const cpfHash = cpf ? gerarCpfHash(cpf) : null;
+            const cpfEnc = cpf ? criptografar(cpf) : null;
+
             const { data: existingCustomer, error: custFetchErr } = await supabaseAdmin
               .from('customers')
               .select('id')
@@ -170,18 +185,26 @@ export async function POST(req: NextRequest) {
 
             if (existingCustomer) {
               customerId = existingCustomer.id;
-              await supabaseAdmin.from('customers').update({
+              const updateData: any = {
                 nome: customerName,
                 email: cust.email,
                 telefone: cust.phone,
-              }).eq('id', customerId);
+              };
+              if (cpfEnc) updateData.cpf_encrypted = `\\x${cpfEnc.toString('hex')}`;
+              if (cpfHash) updateData.cpf_hash = cpfHash;
+
+              await supabaseAdmin.from('customers').update(updateData).eq('id', customerId);
             } else {
-              const { data: newCustomer, error: custInsErr } = await supabaseAdmin.from('customers').insert({
+              const insertData: any = {
                 shopify_customer_id: cust.id,
                 nome: customerName,
                 email: cust.email,
                 telefone: cust.phone,
-              }).select('id').single();
+              };
+              if (cpfEnc) insertData.cpf_encrypted = `\\x${cpfEnc.toString('hex')}`;
+              if (cpfHash) insertData.cpf_hash = cpfHash;
+
+              const { data: newCustomer, error: custInsErr } = await supabaseAdmin.from('customers').insert(insertData).select('id').single();
               
               if (custInsErr) {
                 logs.push({ tipo: 'erro', mensagem: `Erro ao criar cliente para o pedido #${orderNumber}: ${custInsErr.message}`, data: new Date().toISOString() });
@@ -282,8 +305,8 @@ export async function POST(req: NextRequest) {
             historico: [{
               status: 'postado',
               data: new Date().toISOString(),
-              descricao: 'Pedido sincronizado da Shopify e aguardando postagem.',
-              local: 'Logística Interna',
+              descricao: 'Pedido confirmado e em preparação para envio.',
+              local: 'Centro de Distribuição',
             }],
           });
 
@@ -332,7 +355,7 @@ export async function POST(req: NextRequest) {
           email_enviado_em: o.fulfillment_status === 'fulfilled' ? new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() : null,
           shopify_synced: o.fulfillment_status === 'fulfilled',
           historico: [
-            { status: 'postado', data: o.created_at, descricao: 'Pedido sincronizado da Shopify.', local: 'Logística Interna' },
+            { status: 'postado', data: o.created_at, descricao: 'Pedido confirmado e em preparação para envio.', local: 'Centro de Distribuição' },
           ],
         },
       })) : undefined,
