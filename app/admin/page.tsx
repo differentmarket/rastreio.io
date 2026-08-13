@@ -1365,7 +1365,8 @@ export default function AdminPage() {
                         <th className="px-4 py-3 text-left font-semibold">Pedido</th>
                         <th className="px-4 py-3 text-left font-semibold">Cliente</th>
                         <th className="px-4 py-3 text-left font-semibold">Código Rastreio</th>
-                        <th className="px-4 py-3 text-center font-semibold">E-mail</th>
+                        <th className="px-4 py-3 text-center font-semibold">Rastreio</th>
+                        <th className="px-4 py-3 text-center font-semibold">Nota Fiscal</th>
                         <th className="px-4 py-3 text-center font-semibold">Shopify</th>
                         <th className="px-4 py-3 text-left font-semibold">Enviado em</th>
                         <th className="px-4 py-3 text-center font-semibold">Ações</th>
@@ -1393,6 +1394,15 @@ export default function AdminPage() {
                               : <XCircle className="w-4 h-4 text-slate-600 mx-auto" />}
                           </td>
                           <td className="px-4 py-3 text-center">
+                            {item.nota_enviada
+                              ? <div className="flex items-center justify-center gap-1 text-emerald-400 font-bold" title="Nota Fiscal enviada ao cliente">
+                                  <CheckCircle2 className="w-4 h-4" />
+                                </div>
+                              : <div className="flex items-center justify-center gap-1 text-slate-600" title="Nota Fiscal pendente de envio">
+                                  <XCircle className="w-4 h-4" />
+                                </div>}
+                          </td>
+                          <td className="px-4 py-3 text-center">
                             {item.trackings?.shopify_synced
                               ? <CheckCircle2 className="w-4 h-4 text-violet-400 mx-auto" />
                               : <XCircle className="w-4 h-4 text-slate-600 mx-auto" />}
@@ -1403,10 +1413,10 @@ export default function AdminPage() {
                               : <span className="text-slate-600">—</span>}
                           </td>
                           <td className="px-4 py-3 text-center">
-                            {!item.trackings?.email_enviado ? (
+                            {!item.trackings?.email_enviado || !item.nota_enviada ? (
                               <button onClick={() => handleSendNotification('ambos', item.id)}
                                 disabled={resendingId === item.id}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-lg text-[10px] font-semibold text-white transition-colors mx-auto">
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-lg text-[10px] font-semibold text-white transition-colors mx-auto cursor-pointer">
                                 {resendingId === item.id
                                   ? <><Loader2 className="w-3 h-3 animate-spin" /> Enviando...</>
                                   : <><Send className="w-3 h-3" /> Enviar</>}
@@ -1414,7 +1424,7 @@ export default function AdminPage() {
                             ) : (
                               <button onClick={() => handleSendNotification('ambos', item.id)}
                                 disabled={resendingId === item.id}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 rounded-lg text-[10px] font-semibold text-slate-400 transition-colors mx-auto">
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 rounded-lg text-[10px] font-semibold text-slate-400 transition-colors mx-auto cursor-pointer">
                                 {resendingId === item.id
                                   ? <><Loader2 className="w-3 h-3 animate-spin" /> Enviando...</>
                                   : <><RotateCcw className="w-3 h-3" /> Reenviar</>}
