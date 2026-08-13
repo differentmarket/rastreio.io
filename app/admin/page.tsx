@@ -576,19 +576,22 @@ export default function AdminPage() {
     }
   };
 
-  const handleSendBatchEmails = async (periodo: 'hoje' | 'ontem' | 'semana' | 'pendentes' | 'todos' | 'exceto_hoje') => {
+  const handleSendBatchEmails = async (
+    periodo: 'hoje' | 'ontem' | 'semana' | 'pendentes' | 'todos' | 'exceto_hoje',
+    tipoNotificacao: 'ambos' | 'nota' | 'rastreio' = 'ambos'
+  ) => {
     setBatchSending(true);
     setBatchResult(null);
     try {
       const res = await fetch('/api/pedidos/enviar-lote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ periodo }),
+        body: JSON.stringify({ periodo, tipoNotificacao }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha ao disparar e-mails.');
 
-      setBatchResult(`✅ ${data.disparados} e-mails enviados com sucesso de ${data.totalAlvo} elegíveis!`);
+      setBatchResult(`✅ ${data.disparados} e-mails (${tipoNotificacao === 'nota' ? 'Notas Fiscais' : 'Rastreio/Geral'}) enviados com sucesso de ${data.totalAlvo} elegíveis!`);
       fetchOrders();
       fetchEmailQueue();
     } catch (err: any) {
@@ -1288,6 +1291,16 @@ export default function AdminPage() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <button
+                  onClick={() => handleSendBatchEmails('exceto_hoje', 'nota')}
+                  disabled={batchSending}
+                  className="flex-1 sm:flex-none py-2 px-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 rounded-xl text-xs font-bold text-white transition-all shadow-md shadow-emerald-950/40 flex items-center justify-center gap-1.5 cursor-pointer"
+                  title="Envia apenas as Notas Fiscais de pedidos criados até ontem que ainda NÃO foram enviadas (sem duplicar)."
+                >
+                  {batchSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5 text-emerald-200" />}
+                  📄 Notas de Ontem (Apenas Pendentes)
+                </button>
+
                 <button
                   onClick={() => handleSendBatchEmails('exceto_hoje')}
                   disabled={batchSending}
