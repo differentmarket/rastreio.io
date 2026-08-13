@@ -55,6 +55,8 @@ interface EmailQueueItem {
     email_enviado_em: string | null;
     shopify_synced: boolean;
   } | null;
+  nota_enviada?: boolean;
+  nota_enviada_em?: string | null;
 }
 
 // ─────────────── Helpers ───────────────
