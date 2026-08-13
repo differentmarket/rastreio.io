@@ -1270,39 +1270,6 @@ export default function AdminPage() {
 
             {/* List Items */}
             <div className="flex-1 overflow-y-auto divide-y divide-slate-900/60">
-              {/* Painel de Disparo em Lote de E-mails */}
-              <div className="p-3 bg-slate-900/40 border-b border-slate-800/80">
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  <Send className="w-3 h-3 text-indigo-400" /> Disparar E-mails em Lote
-                </p>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button onClick={() => handleSendBatchEmails('hoje')} disabled={batchSending}
-                    className="py-1.5 px-2 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 rounded-lg text-[10px] font-bold text-indigo-300 transition-colors flex items-center justify-center gap-1">
-                    📅 Hoje
-                  </button>
-                  <button onClick={() => handleSendBatchEmails('ontem')} disabled={batchSending}
-                    className="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-[10px] font-bold text-slate-300 transition-colors flex items-center justify-center gap-1">
-                    ⏪ Ontem
-                  </button>
-                  <button onClick={() => handleSendBatchEmails('semana')} disabled={batchSending}
-                    className="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-[10px] font-bold text-slate-300 transition-colors flex items-center justify-center gap-1">
-                    🗓️ Esta Semana
-                  </button>
-                  <button onClick={() => handleSendBatchEmails('exceto_hoje')} disabled={batchSending}
-                    className="py-1.5 px-2 bg-violet-600/20 hover:bg-violet-600/30 border border-violet-500/30 rounded-lg text-[10px] font-bold text-violet-300 transition-colors flex items-center justify-center gap-1">
-                    ⏳ Exceto Hoje
-                  </button>
-                  <button onClick={() => handleSendBatchEmails('pendentes')} disabled={batchSending}
-                    className="col-span-2 py-1.5 px-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 rounded-lg text-[10px] font-bold text-amber-300 transition-colors flex items-center justify-center gap-1">
-                    🚀 Todos Pendentes
-                  </button>
-                </div>
-                {batchResult && (
-                  <div className="mt-2 p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-[10px] text-emerald-400 text-center font-semibold">
-                    {batchResult}
-                  </div>
-                )}
-              </div>
               {loadingOrders ? (
                 <div className="flex flex-col items-center justify-center py-20 text-slate-500">
                   <Loader2 className="w-5 h-5 animate-spin text-indigo-500 mb-2" />

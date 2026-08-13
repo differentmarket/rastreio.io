@@ -128,6 +128,7 @@ export async function GET(req: NextRequest) {
           id,
           shopify_order_id,
           numero_pedido,
+          created_at,
           raw_payload,
           customers ( nome, email )
         )
