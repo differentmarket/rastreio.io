@@ -118,6 +118,7 @@ export async function GET(req: NextRequest) {
         customers ( nome, email ),
         trackings ( codigo_rastreio, status, email_enviado, email_enviado_em, shopify_synced )
       `)
+      .eq('status_pedido', 'pago')
       .order('created_at', { ascending: false });
 
     if (error) {

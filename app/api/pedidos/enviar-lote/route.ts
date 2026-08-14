@@ -59,14 +59,14 @@ export async function POST(req: NextRequest) {
     const notaDelayHoras = parseFloat(cfg['NOTA_DELAY_HORAS'] || '2');
     const rastreioProximoDiaUtil = cfg['RASTREIO_PROXIMO_DIA_UTIL'] !== 'false'; // padrão: true
 
-    // ── Buscar pedidos ────────────────────────────────────────────
+    // ── Buscar pedidos (Apenas pedidos PAGOS são elegíveis para e-mails) ──
     let query = supabaseAdmin.from('orders').select(`
       id, shopify_order_id, numero_pedido, status_pedido, valor_total,
       itens, raw_payload, created_at,
       customers ( nome, email ),
       addresses ( logradouro, numero, complemento, bairro, cidade, estado, cep ),
       trackings ( id, codigo_rastreio, status, email_enviado, shopify_synced )
-    `);
+    `).eq('status_pedido', 'pago');
 
     const now = new Date();
     if (orderId) {

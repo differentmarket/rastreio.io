@@ -27,6 +27,7 @@ export async function POST(
         id,
         shopify_order_id,
         numero_pedido,
+        status_pedido,
         valor_total,
         itens,
         created_at,
@@ -59,6 +60,10 @@ export async function POST(
 
     if (error || !order) {
       return NextResponse.json({ error: 'Pedido não encontrado.' }, { status: 404 });
+    }
+
+    if (order.status_pedido !== 'pago') {
+      return NextResponse.json({ error: 'Envio de e-mail bloqueado: Notificações de compra só podem ser enviadas para pedidos efetivamente pagos.' }, { status: 400 });
     }
 
     const customer: any = Array.isArray(order.customers) ? order.customers[0] : order.customers;

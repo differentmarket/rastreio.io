@@ -53,7 +53,8 @@ export async function GET(req: NextRequest) {
         raw_payload,
         customers ( nome, email, telefone ),
         addresses ( logradouro, numero, complemento, bairro, cidade, estado, cep )
-      `);
+      `)
+      .eq('status_pedido', 'pago');
 
     if (notaErr) {
       console.error('Erro ao buscar pedidos para envio de nota fiscal:', notaErr);
