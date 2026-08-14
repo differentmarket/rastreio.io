@@ -58,13 +58,21 @@ export async function GET(req: NextRequest) {
     if (notaErr) {
       console.error('Erro ao buscar pedidos para envio de nota fiscal:', notaErr);
     } else if (pendingNotaOrders && pendingNotaOrders.length > 0) {
+      const notaDelayHoras = parseFloat(cfg['NOTA_DELAY_HORAS'] || '2');
+
       for (const order of pendingNotaOrders) {
         const rawPayload = (order.raw_payload as any) || {};
         const enviarNotaEm = rawPayload.enviar_nota_em;
         const notaEnviada = rawPayload.nota_enviada === true;
 
-        // Verifica se é um pedido agendado cujo prazo de envio já passou e ainda não foi enviada
-        if (enviarNotaEm && new Date(enviarNotaEm) <= new Date() && !notaEnviada) {
+        const criadoEmMs = new Date(order.created_at).getTime();
+        const agoraMs = Date.now();
+        const passouDelayCriacao = (agoraMs - criadoEmMs) >= (notaDelayHoras * 3600 * 1000);
+
+        // Se o prazo explícito enviar_nota_em venceu, OU se já passaram X horas da criação do pedido sem enviar a nota
+        const prazoNotaPassou = (enviarNotaEm && new Date(enviarNotaEm).getTime() <= agoraMs) || (!enviarNotaEm && passouDelayCriacao) || passouDelayCriacao;
+
+        if (prazoNotaPassou && !notaEnviada) {
           const customer: any = Array.isArray(order.customers) ? order.customers[0] : order.customers;
           const address: any = Array.isArray(order.addresses) ? order.addresses[0] : order.addresses;
 

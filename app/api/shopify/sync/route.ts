@@ -269,6 +269,9 @@ export async function POST(req: NextRequest) {
               logs.push({ tipo: 'sucesso', mensagem: `Pedido #${orderNumber} atualizado com sucesso.`, data: new Date().toISOString() });
             }
           } else {
+            const createdIso = shopifyOrder.created_at || new Date().toISOString();
+            const enviarNotaEm = new Date(new Date(createdIso).getTime() + 2 * 3600 * 1000).toISOString();
+
             const { data: newOrder, error: insErr } = await supabaseAdmin.from('orders').insert({
               shopify_order_id: shopifyOrderId,
               customer_id: customerId,
@@ -277,7 +280,12 @@ export async function POST(req: NextRequest) {
               status_pedido: statusPedido,
               valor_total: totalVal,
               itens: shopifyOrder.line_items,
-              created_at: shopifyOrder.created_at || new Date().toISOString(),
+              created_at: createdIso,
+              raw_payload: {
+                ...shopifyOrder,
+                enviar_nota_em: enviarNotaEm,
+                nota_enviada: false,
+              },
             }).select('id').single();
 
             if (insErr) {
