@@ -37,8 +37,8 @@ export async function GET(req: NextRequest) {
     // Tentar buscar da tabela stores no Supabase
     let query = supabaseAdmin.from('stores').select('*');
 
-    // Se não for ambiente de testes mock e tivermos o userId, filtramos apenas as lojas do lojista
-    if (!isMock && userId) {
+    // Se não for ambiente de testes mock e tivermos o userEmail, filtramos apenas as lojas do lojista
+    if (!isMock && userEmail) {
       // Auto-associar lojas órfãs (antigas) ao primeiro lojista que acessar o painel
       try {
         const { data: allStores } = await supabaseAdmin.from('stores').select('id');
@@ -51,11 +51,10 @@ export async function GET(req: NextRequest) {
           if (orphanStores.length > 0) {
             for (const s of orphanStores) {
               await supabaseAdmin.from('store_users').upsert({
-                user_id: userId,
                 user_email: userEmail,
                 store_id: s.id,
                 role: 'owner',
-              }, { onConflict: 'user_id,store_id' });
+              }, { onConflict: 'store_id,user_email' });
             }
           }
         }
@@ -66,7 +65,7 @@ export async function GET(req: NextRequest) {
       const { data: userBinds } = await supabaseAdmin
         .from('store_users')
         .select('store_id')
-        .eq('user_id', userId);
+        .eq('user_email', userEmail);
 
       const allowedStoreIds = userBinds?.map(b => b.store_id) || [];
       query = query.in('id', allowedStoreIds);
@@ -249,13 +248,12 @@ export async function POST(req: NextRequest) {
     if (token && newStore) {
       try {
         const { data: { user } } = await supabaseAdmin.auth.getUser(token);
-        if (user) {
+        if (user && user.email) {
           await supabaseAdmin.from('store_users').upsert({
-            user_id: user.id,
-            user_email: user.email || '',
+            user_email: user.email,
             store_id: newStore.id,
             role: 'owner',
-          }, { onConflict: 'user_id,store_id' });
+          }, { onConflict: 'store_id,user_email' });
         }
       } catch (err) {
         console.error('Erro ao associar loja ao usuário no store_users:', err);
