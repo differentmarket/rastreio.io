@@ -18,7 +18,8 @@ export async function GET(req: NextRequest) {
   ].join(',');
 
   const redirectUri = `${appUrl}/api/shopify/oauth/callback`;
-  const state = Math.random().toString(36).substring(2);
+  const storeId = req.nextUrl.searchParams.get('store_id') || '';
+  const state = storeId || Math.random().toString(36).substring(2);
 
   const authUrl =
     `https://${shop}/admin/oauth/authorize` +

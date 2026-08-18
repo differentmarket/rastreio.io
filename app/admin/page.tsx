@@ -140,6 +140,7 @@ export default function AdminPage() {
   const [selectedStoreId, setSelectedStoreId] = useState<string>('all');
   const [loadingStores, setLoadingStores] = useState(false);
   const [newStoreModalOpen, setNewStoreModalOpen] = useState(false);
+  const [newStoreTab, setNewStoreTab] = useState<'oauth' | 'manual'>('oauth');
   const [newStoreDomain, setNewStoreDomain] = useState('');
   const [newStoreToken, setNewStoreToken] = useState('');
   const [newStoreNome, setNewStoreNome] = useState('');
@@ -261,6 +262,38 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window !== 'undefined' && session) {
+      const params = new URLSearchParams(window.location.search);
+      const shopifyConnected = params.get('shopify_connected');
+      const storeId = params.get('store_id');
+
+      if (shopifyConnected === '1') {
+        // Limpar parâmetros da URL de forma silenciosa
+        window.history.replaceState({}, document.title, window.location.pathname);
+
+        const selectNewStore = async () => {
+          // Recarregar a lista de lojas para buscar a recém-conectada
+          const res = await fetch('/api/stores', { headers: getAuthHeaders() });
+          if (res.ok) {
+            const data = await res.json();
+            const list = data.stores || [];
+            setStores(list);
+
+            if (storeId) {
+              const found = list.find((s: any) => s.id === storeId);
+              if (found) {
+                setActiveStore(found);
+              }
+            }
+          }
+        };
+
+        selectNewStore();
+      }
+    }
+  }, [session]);
+
+  useEffect(() => {
     if (session) {
       fetchOrders();
       fetchStores();
@@ -330,6 +363,52 @@ export default function AdminPage() {
     } catch (err: any) {
       setNewStoreError(err.message || 'Erro ao integrar loja.');
     } finally {
+      setSavingStore(false);
+    }
+  };
+
+  const handleConnectShopifyOAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStoreDomain) {
+      setNewStoreError('O domínio da loja Shopify é obrigatório.');
+      return;
+    }
+
+    setSavingStore(true);
+    setNewStoreError(null);
+
+    // Sanitizar domínio
+    let cleanDomain = newStoreDomain.trim().toLowerCase()
+      .replace(/^https?:\/\//, '')
+      .replace(/\/+$/, '');
+
+    if (!cleanDomain.includes('.')) {
+      cleanDomain = `${cleanDomain}.myshopify.com`;
+    }
+
+    try {
+      // 1. Criar a loja temporária pendente para obter o ID
+      const res = await fetch('/api/stores', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          nome_loja: newStoreNome || cleanDomain.split('.')[0],
+          shopify_domain: cleanDomain,
+          shopify_access_token: null, // Preenchido no OAuth callback
+          status: 'pendente',
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao iniciar integração.');
+
+      const storeId = data.store?.id;
+      if (!storeId) throw new Error('ID da loja não retornado.');
+
+      // 2. Redirecionar para o fluxo de OAuth do Shopify
+      window.location.href = `/api/shopify/oauth/start?shop=${cleanDomain}&store_id=${storeId}`;
+    } catch (err: any) {
+      setNewStoreError(err.message || 'Erro ao iniciar fluxo de conexão.');
       setSavingStore(false);
     }
   };
@@ -1119,6 +1198,238 @@ export default function AdminPage() {
               )}
             </div>
           </main>
+
+          {/* Modal de Conectar/Adicionar Nova Loja */}
+          {newStoreModalOpen && (
+            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-5">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                    <Store className="w-5 h-5 text-indigo-400" /> Integrar Nova Loja Shopify
+                  </h3>
+                  <button
+                    onClick={() => {
+                      setNewStoreModalOpen(false);
+                      setNewStoreError(null);
+                      setNewStoreSuccess(false);
+                    }}
+                    className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                  >
+                    <X className="w-4.5 h-4.5" />
+                  </button>
+                </div>
+
+                {/* Seletor de Abas Premium */}
+                <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800/80">
+                  <button
+                    type="button"
+                    onClick={() => { setNewStoreTab('oauth'); setNewStoreError(null); }}
+                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      newStoreTab === 'oauth'
+                        ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-900/50'
+                    }`}
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    Conexão Automática (OAuth)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setNewStoreTab('manual'); setNewStoreError(null); }}
+                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      newStoreTab === 'manual'
+                        ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-900/50'
+                    }`}
+                  >
+                    <Building2 className="w-3.5 h-3.5" />
+                    Conexão Manual (Token Privado)
+                  </button>
+                </div>
+
+                {/* Alertas de Erro ou Sucesso */}
+                {newStoreError && (
+                  <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-3 rounded-xl flex items-center gap-2">
+                    <XCircle className="w-4 h-4 shrink-0" />
+                    <span>{newStoreError}</span>
+                  </div>
+                )}
+                {newStoreSuccess && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs p-3 rounded-xl flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>Loja configurada com sucesso! Redirecionando...</span>
+                  </div>
+                )}
+
+                {/* Form Aba 1: OAuth Automático */}
+                {newStoreTab === 'oauth' ? (
+                  <form onSubmit={handleConnectShopifyOAuth} className="space-y-4">
+                    <div className="space-y-2">
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        Conecte sua loja do modo mais rápido e seguro. Nós guiaremos você pela tela de autorização oficial da Shopify.
+                      </p>
+                    </div>
+
+                    <div className="space-y-3.5">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Nome da Loja (Opcional)</label>
+                        <input
+                          type="text"
+                          value={newStoreNome}
+                          onChange={e => setNewStoreNome(e.target.value)}
+                          placeholder="Ex: Minha Loja Fantástica"
+                          className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl text-white text-xs outline-none transition-all"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Domínio Shopify (myshopify.com)</label>
+                        <div className="relative">
+                          <Globe className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                          <input
+                            type="text"
+                            required
+                            value={newStoreDomain}
+                            onChange={e => setNewStoreDomain(e.target.value)}
+                            placeholder="sua-loja.myshopify.com"
+                            className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl text-white text-xs font-mono outline-none transition-all"
+                          />
+                        </div>
+                        <span className="text-[10px] text-slate-500 mt-1 block">Insira apenas o domínio original da loja, ex: minha-loja.myshopify.com ou apenas o subdomínio.</span>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-3 border-t border-slate-800/80">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewStoreModalOpen(false);
+                          setNewStoreError(null);
+                          setNewStoreSuccess(false);
+                        }}
+                        className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 rounded-xl transition-colors cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={savingStore}
+                        className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-xs font-bold text-white rounded-xl flex items-center gap-2 shadow-lg shadow-indigo-950/50 disabled:opacity-50 transition-all cursor-pointer"
+                      >
+                        {savingStore ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            Conectando...
+                          </>
+                        ) : (
+                          <>
+                            <Zap className="w-3.5 h-3.5" />
+                            Conectar via Shopify
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  /* Form Aba 2: Conexão Manual */
+                  <form onSubmit={handleAddStore} className="space-y-4">
+                    <div className="space-y-2">
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        Insira as credenciais de um App Personalizado criado manualmente no painel da sua Shopify.
+                      </p>
+                    </div>
+
+                    <div className="space-y-3.5">
+                      <div className="grid grid-cols-2 gap-3.5">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Nome da Loja</label>
+                          <input
+                            type="text"
+                            required
+                            value={newStoreNome}
+                            onChange={e => setNewStoreNome(e.target.value)}
+                            placeholder="Ex: Loja Matriz"
+                            className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl text-white text-xs outline-none transition-all"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">CNPJ da Empresa (Opcional)</label>
+                          <input
+                            type="text"
+                            value={newStoreCnpj}
+                            onChange={e => setNewStoreCnpj(e.target.value)}
+                            placeholder="00.000.000/0001-00"
+                            className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl text-white text-xs outline-none transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Domínio Shopify (myshopify.com)</label>
+                        <div className="relative">
+                          <Globe className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                          <input
+                            type="text"
+                            required
+                            value={newStoreDomain}
+                            onChange={e => setNewStoreDomain(e.target.value)}
+                            placeholder="exemplo.myshopify.com"
+                            className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl text-white text-xs font-mono outline-none transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Admin API Access Token (shpat_...)</label>
+                        <div className="relative">
+                          <Shield className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                          <input
+                            type="password"
+                            required
+                            value={newStoreToken}
+                            onChange={e => setNewStoreToken(e.target.value)}
+                            placeholder="shpat_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                            className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl text-white text-xs font-mono outline-none transition-all"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-3 border-t border-slate-800/80">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewStoreModalOpen(false);
+                          setNewStoreError(null);
+                          setNewStoreSuccess(false);
+                        }}
+                        className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 rounded-xl transition-colors cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={savingStore}
+                        className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-xs font-bold text-white rounded-xl flex items-center gap-2 shadow-lg shadow-indigo-950/50 disabled:opacity-50 transition-all cursor-pointer"
+                      >
+                        {savingStore ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            Salvando...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Salvar Loja Manualmente
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         /* ------------------------------------------------------------

@@ -11,11 +11,44 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
     }
 
+    // Obter o token JWT do header de autorização
+    const authHeader = req.headers.get('authorization');
+    const token = authHeader ? authHeader.split(' ')[1] : null;
+    let userId = null;
+    let userEmail = '';
+    
+    if (token) {
+      try {
+        const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+        if (user) {
+          userId = user.id;
+          userEmail = user.email || '';
+        }
+      } catch (e) {
+        console.error('Erro ao obter usuário a partir do token no GET /api/stores:', e);
+      }
+    }
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    const isMock = supabaseUrl.includes('mock-project') || 
+                   !process.env.SUPABASE_SERVICE_ROLE_KEY || 
+                   process.env.SUPABASE_SERVICE_ROLE_KEY === 'mock-service-role-key';
+
     // Tentar buscar da tabela stores no Supabase
-    const { data: stores, error } = await supabaseAdmin
-      .from('stores')
-      .select('*')
-      .order('created_at', { ascending: false });
+    let query = supabaseAdmin.from('stores').select('*');
+
+    // Se não for ambiente de testes mock e tivermos o userId, filtramos apenas as lojas do lojista
+    if (!isMock && userId) {
+      const { data: userBinds } = await supabaseAdmin
+        .from('store_users')
+        .select('store_id')
+        .eq('user_id', userId);
+
+      const allowedStoreIds = userBinds?.map(b => b.store_id) || [];
+      query = query.in('id', allowedStoreIds);
+    }
+
+    const { data: stores, error } = await query.order('created_at', { ascending: false });
 
     if (error) {
       // Se a tabela stores não existir no banco ainda, gera fallback com a loja padrão configurada no settings
@@ -82,6 +115,16 @@ export async function GET(req: NextRequest) {
           // Associa os pedidos e rastreios existentes sem store_id a esta loja
           await supabaseAdmin.from('orders').update({ store_id: autoCreatedStore.id }).is('store_id', null);
           await supabaseAdmin.from('trackings').update({ store_id: autoCreatedStore.id }).is('store_id', null);
+          
+          // Associa o usuário atual como proprietário da loja auto-criada no store_users
+          if (userId) {
+            await supabaseAdmin.from('store_users').upsert({
+              user_id: userId,
+              user_email: userEmail,
+              store_id: autoCreatedStore.id,
+              role: 'owner',
+            }, { onConflict: 'user_id,store_id' });
+          }
         }
       }
     }
@@ -174,6 +217,25 @@ export async function POST(req: NextRequest) {
         });
       }
       throw error;
+    }
+
+    // Associar loja ao usuário autenticado (store_users)
+    const authHeader = req.headers.get('authorization');
+    const token = authHeader ? authHeader.split(' ')[1] : null;
+    if (token && newStore) {
+      try {
+        const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+        if (user) {
+          await supabaseAdmin.from('store_users').upsert({
+            user_id: user.id,
+            user_email: user.email || '',
+            store_id: newStore.id,
+            role: 'owner',
+          }, { onConflict: 'user_id,store_id' });
+        }
+      } catch (err) {
+        console.error('Erro ao associar loja ao usuário no store_users:', err);
+      }
     }
 
     return NextResponse.json({

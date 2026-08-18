@@ -65,10 +65,15 @@ CREATE TABLE IF NOT EXISTS public.store_users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   store_id UUID REFERENCES public.stores(id) ON DELETE CASCADE,
   user_email TEXT NOT NULL,
-  role TEXT DEFAULT 'lojista',
+  user_id UUID, -- ID do usuário do Supabase Auth
+  role TEXT DEFAULT 'owner', -- 'owner', 'member', 'lojista'
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(store_id, user_email)
+  UNIQUE(store_id, user_email),
+  UNIQUE(store_id, user_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_store_users_user_id ON public.store_users(user_id);
+CREATE INDEX IF NOT EXISTS idx_store_users_store_id ON public.store_users(store_id);
 
 -- 5. Tabela para Histórico de Conversas e Recuperações de Vendas do Agente de IA
 CREATE TABLE IF NOT EXISTS public.ai_recovery_conversations (
