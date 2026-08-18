@@ -39,6 +39,30 @@ export async function GET(req: NextRequest) {
 
     // Se não for ambiente de testes mock e tivermos o userId, filtramos apenas as lojas do lojista
     if (!isMock && userId) {
+      // Auto-associar lojas órfãs (antigas) ao primeiro lojista que acessar o painel
+      try {
+        const { data: allStores } = await supabaseAdmin.from('stores').select('id');
+        const { data: allBinds } = await supabaseAdmin.from('store_users').select('store_id');
+
+        if (allStores) {
+          const boundStoreIds = new Set(allBinds?.map(b => b.store_id) || []);
+          const orphanStores = allStores.filter(s => !boundStoreIds.has(s.id));
+
+          if (orphanStores.length > 0) {
+            for (const s of orphanStores) {
+              await supabaseAdmin.from('store_users').upsert({
+                user_id: userId,
+                user_email: userEmail,
+                store_id: s.id,
+                role: 'owner',
+              }, { onConflict: 'user_id,store_id' });
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Erro ao auto-associar lojas órfãs:', err);
+      }
+
       const { data: userBinds } = await supabaseAdmin
         .from('store_users')
         .select('store_id')
