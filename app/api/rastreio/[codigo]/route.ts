@@ -131,7 +131,7 @@ export async function GET(
     if (targetStoreId) {
       const { data: store } = await supabaseAdmin
         .from('stores')
-        .select('nome_loja, logo_url, primary_color, banner_url, banner_link, whatsapp_suporte')
+        .select('nome_loja, logo_url, primary_color, banner_url, banner_link, whatsapp_suporte, veopag_enabled')
         .eq('id', targetStoreId)
         .maybeSingle();
       if (store) {
@@ -363,6 +363,7 @@ export async function GET(
           nome: taxaNome,
           valor: taxaValor,
           link: taxaLink,
+          veopag_enabled: storeCustomization?.veopag_enabled || false,
         },
         upsell_info: {
           ativo: upsellEnabled,
@@ -387,6 +388,7 @@ export async function GET(
         nome: taxaNome,
         valor: taxaValor,
         link: taxaLink,
+        veopag_enabled: storeCustomization?.veopag_enabled || false,
       },
       upsell_info: {
         ativo: upsellEnabled,

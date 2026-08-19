@@ -35,6 +35,7 @@ interface RastreioData {
     nome: string;
     valor: string;
     link: string;
+    veopag_enabled?: boolean;
   };
   upsell_info?: {
     ativo: boolean;
@@ -64,6 +65,98 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
   const [inputMsg, setInputMsg] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
 
+  // Estados do Checkout Pix Integrado
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [payerName, setPayerName] = useState('');
+  const [payerEmail, setPayerEmail] = useState('');
+  const [payerCpf, setPayerCpf] = useState('');
+  const [bradescoBump, setBradescoBump] = useState(false);
+  const [expressBump, setExpressBump] = useState(false);
+  const [pixData, setPixData] = useState<{ qrcode: string; transactionId: string; amount: number; external_id?: string; isMock?: boolean } | null>(null);
+  const [pixPaid, setPixPaid] = useState(false);
+
+  // Polling para monitoramento de confirmação do Pix
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (pixData && !pixPaid) {
+      interval = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/rastreio/${codigo}`);
+          if (res.ok) {
+            const jsonData = await res.json();
+            // Se o status mudou no banco de pendente_taxa para outra coisa
+            if (jsonData.status !== 'pendente_taxa') {
+              setPixPaid(true);
+              setData(jsonData); // atualiza a timeline
+            }
+          }
+        } catch (err) {
+          console.error('Erro no polling do Pix:', err);
+        }
+      }, 5000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [pixData, pixPaid, codigo]);
+
+  // Cálculos auxiliares do Checkout Pix
+  const baseValor = data ? parseFloat(data.taxa_info?.valor || '27.90') : 27.90;
+  const total = parseFloat((baseValor + (bradescoBump ? 14.76 : 0) + (expressBump ? 9.91 : 0)).toFixed(2));
+
+  const handleGerarPix = async () => {
+    if (!data) return;
+    setCheckoutLoading(true);
+    try {
+      const res = await fetch(`/api/rastreio/${codigo}/checkout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: payerName,
+          email: payerEmail,
+          document: payerCpf,
+          bradesco_seguros: bradescoBump,
+          entrega_express: expressBump,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setPixData(json);
+      } else {
+        alert(json.error || 'Erro ao gerar o Pix. Tente novamente.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao processar o checkout.');
+    } finally {
+      setCheckoutLoading(false);
+    }
+  };
+
+  const handleConfirmarPagamentoSimulado = async () => {
+    if (!pixData) return;
+    try {
+      const res = await fetch('/api/webhooks/veopag', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'COMPLETED',
+          external_id: pixData.external_id,
+        }),
+      });
+      if (res.ok) {
+        setPixPaid(true);
+        // Recarregar os dados do rastreio
+        await fetchTracking();
+      } else {
+        alert('Erro ao confirmar pagamento simulado.');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const fetchTracking = async () => {
     setLoading(true);
     setError(null);
@@ -77,6 +170,10 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
       }
       const jsonData = await res.json();
       setData(jsonData);
+      if (jsonData.customer) {
+        setPayerName(jsonData.customer.nome || '');
+        setPayerEmail(jsonData.customer.email || '');
+      }
       
       // Mensagem inicial padrão da IA
       if (chatMessages.length === 0) {
@@ -212,7 +309,314 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
             </button>
           </div>
         ) : data ? (
-          <div className="space-y-6">
+          showCheckout ? (
+            <div className="bg-[#F4F6F9] text-slate-800 rounded-3xl overflow-hidden shadow-2xl border border-slate-200 animate-fadeIn max-w-4xl mx-auto">
+              {/* Cabecalho Gov.br */}
+              <div className="bg-[#0C2340] px-6 py-4 flex items-center justify-between border-b-4 border-[#00C853]">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1.5 text-white font-sans">
+                    <img src="https://cloudfox-digital-products.s3.amazonaws.com/uploads/user/WkYL6ge4vvGrKM0/public/stores/KV603kYqNLGw8ym/logo/dYbJvI5qVelpp1mQ8EJdAmRnKQ94MwarSV4pdFt9.png" alt="gov.br" className="h-8 w-auto object-contain" />
+                    <div className="w-px h-6 bg-slate-500 mx-2 hidden sm:block" />
+                    <span className="text-xs text-slate-300 font-medium uppercase tracking-wider hidden sm:block">Ministério da Fazenda</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 bg-[#1A365D] px-3 py-1.5 rounded-lg border border-slate-700/50">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-[10px] sm:text-xs font-black text-emerald-400 uppercase tracking-widest">Pagamento 100% Seguro</span>
+                </div>
+              </div>
+
+              {/* Faixa Azul de Instrução */}
+              <div className="bg-[#1E3E6C] text-white px-6 py-3.5 text-center text-xs sm:text-sm font-bold tracking-wide shadow-sm flex items-center justify-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+                Pague a sua Tarifa e libere o seu produto para o destino final.
+              </div>
+
+              <div className="p-6 space-y-6">
+                {pixPaid ? (
+                  <div className="text-center py-10 space-y-6 animate-scaleUp bg-white rounded-2xl p-8 border border-slate-100 shadow-sm">
+                    <div className="inline-flex p-4 rounded-full bg-emerald-100 text-emerald-600 scale-125">
+                      <CheckCircle2 className="w-12 h-12" />
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="text-2xl font-black text-slate-900">Taxa Paga com Sucesso!</h3>
+                      <p className="text-sm text-slate-500 max-w-md mx-auto">
+                        A Receita Federal e os Correios confirmaram o recebimento do Pix. O seu pacote foi liberado para envio imediato.
+                      </p>
+                    </div>
+
+                    <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl max-w-sm mx-auto text-left space-y-1 text-xs">
+                      <span className="font-bold text-emerald-800 block text-[10px] uppercase">Nova Atualização do Rastreio</span>
+                      <span className="text-slate-600 block"><strong>Status:</strong> Em Trânsito</span>
+                      <span className="text-slate-600 block"><strong>Ação:</strong> Taxa de liberação paga com sucesso. Objeto liberado e reencaminhado.</span>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setShowCheckout(false);
+                        setPixData(null);
+                        setPixPaid(false);
+                      }}
+                      className="px-8 py-3 bg-[#0C2340] hover:bg-[#1E3E6C] text-white font-extrabold rounded-xl transition-all shadow-md text-sm font-sans"
+                    >
+                      Voltar ao Rastreamento
+                    </button>
+                  </div>
+                ) : pixData ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
+                    <div className="flex flex-col items-center justify-center space-y-4 border-b md:border-b-0 md:border-r border-slate-100 pb-6 md:pb-0 md:pr-6">
+                      <span className="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider">Aguardando Pagamento</span>
+                      <img 
+                        src={`https://chart.googleapis.com/chart?chs=220x220&cht=qr&chl=${encodeURIComponent(pixData.qrcode)}`} 
+                        alt="QR Code do Pix" 
+                        className="w-48 h-48 border border-slate-200 rounded-xl p-2 bg-white"
+                      />
+                      <span className="text-xs text-slate-500 font-medium">Escaneie o QR Code acima com o app do seu banco</span>
+                    </div>
+
+                    <div className="flex flex-col justify-between space-y-4">
+                      <div className="space-y-3">
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">Valor Total Consolidado</span>
+                          <p className="text-3xl font-black text-emerald-600">R$ {pixData.amount.toFixed(2)}</p>
+                        </div>
+
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">Pix Copia e Cola</span>
+                          <div className="flex items-center gap-2">
+                            <input 
+                              type="text" 
+                              readOnly 
+                              value={pixData.qrcode} 
+                              className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono text-slate-600 flex-1 truncate select-all outline-none"
+                            />
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(pixData.qrcode);
+                                alert('Código Pix copiado!');
+                              }}
+                              className="p-2 bg-[#0C2340] hover:bg-[#1E3E6C] text-white rounded-lg transition-colors text-xs font-bold shrink-0 font-sans"
+                            >
+                              Copiar
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="text-xs text-slate-500 space-y-1.5 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-100 font-sans font-medium">
+                          <p className="font-bold text-slate-700">Como pagar:</p>
+                          <p>1. Copie a chave Pix acima ou leia o QR Code com o celular.</p>
+                          <p>2. Abra o aplicativo do seu banco de preferência.</p>
+                          <p>3. Vá na opção Pix &gt; Copia e Cola ou ler QR Code.</p>
+                          <p>4. Confirme as informações e pague a taxa.</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 pt-2 border-t border-slate-100">
+                        <div className="flex items-center justify-center gap-2 text-slate-400 text-xs animate-pulse">
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-slate-400" />
+                          <span>Verificando pagamento automaticamente...</span>
+                        </div>
+
+                        {pixData.isMock && (
+                          <button
+                            onClick={handleConfirmarPagamentoSimulado}
+                            className="w-full py-2.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-lg transition-all shadow-md mt-2 flex items-center justify-center gap-2 uppercase tracking-wider font-mono"
+                          >
+                            🧪 [Sandbox] Confirmar Pagamento Simulado
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+                    <div className="md:col-span-7 space-y-6">
+                      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm space-y-4">
+                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Seu Carrinho</h4>
+                        
+                        <div className="flex items-center justify-between gap-4 p-4 bg-slate-50 border border-slate-100 rounded-xl">
+                          <div className="flex items-center gap-3">
+                            <div className="p-1 bg-white border border-slate-100 rounded-xl w-12 h-12 flex items-center justify-center overflow-hidden shrink-0">
+                              <img src="https://cloudfox-digital-products.s3.amazonaws.com/uploads/public/products/5MoUUkyDBSdnNvNr6OLWadKL56OdqKPsnVxtlDuE.png" alt="Receita Federal" className="h-10 w-auto object-contain" />
+                            </div>
+                            <div>
+                              <span className="font-bold text-slate-900 block text-sm font-sans">Taxa Aduaneira de Imposto Nacional</span>
+                              <span className="text-[10px] text-amber-600 font-extrabold uppercase tracking-wide block mt-0.5 font-sans">Aguardando Pagamento</span>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-black text-slate-900 block text-base font-sans">R$ {baseValor.toFixed(2)}</span>
+                            <span className="text-[10px] text-slate-400 block font-sans">Qtd: 1 (Fixo)</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm space-y-4">
+                        <div>
+                          <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest font-sans">Ofertas Disponíveis para Você</h4>
+                          <p className="text-[10px] text-slate-500 mt-0.5 font-medium font-sans">Adicione garantias extras diretamente ao seu pedido com condições únicas.</p>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div 
+                            onClick={() => setBradescoBump(!bradescoBump)}
+                            className={`p-4 border-2 rounded-2xl cursor-pointer transition-all flex items-start gap-4 ${
+                              bradescoBump 
+                                ? 'border-[#00C853] bg-emerald-50/20 shadow-md scale-[1.01]' 
+                                : 'border-dashed border-amber-300 bg-amber-50/10 hover:border-amber-400'
+                            }`}
+                          >
+                            <div className="pt-0.5">
+                              <div className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${
+                                bradescoBump ? 'bg-[#00C853] border-[#00C853] text-white' : 'border-slate-300 bg-white'
+                              }`}>
+                                {bradescoBump && <CheckCircle2 className="w-3.5 h-3.5" />}
+                              </div>
+                            </div>
+                            <div className="flex-1 space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <img src="https://cloudfox-digital-products.s3.amazonaws.com/uploads/public/products/rXVh7HRWqLZNmUR6UCNBYXV78WfeVjo74pjJHpE9.png" alt="Bradesco Seguros" className="h-5 w-auto object-contain shrink-0" />
+                                  <span className="text-xs font-black text-[#13315C] uppercase tracking-wide block font-sans">Garantia Bradesco Seguros</span>
+                                </div>
+                                <span className="text-xs font-black text-slate-900 shrink-0 font-sans">+ R$ 14,76</span>
+                              </div>
+                              <p className="text-xs text-slate-600 leading-relaxed font-medium font-sans">
+                                Indenização de até R$ 1.000,00 da seguradora caso seu produto seja roubado, extraviado ou sofra danos durante a retentativa de reenvio.
+                              </p>
+                              <span className="inline-block bg-amber-100 text-amber-800 text-[9px] font-black uppercase px-2 py-0.5 rounded mt-1.5 tracking-wider font-sans">
+                                Recomendado
+                              </span>
+                            </div>
+                          </div>
+
+                          <div 
+                            onClick={() => setExpressBump(!expressBump)}
+                            className={`p-4 border-2 rounded-2xl cursor-pointer transition-all flex items-start gap-4 ${
+                              expressBump 
+                                ? 'border-[#00C853] bg-emerald-50/20 shadow-md scale-[1.01]' 
+                                : 'border-dashed border-amber-300 bg-amber-50/10 hover:border-amber-400'
+                            }`}
+                          >
+                            <div className="pt-0.5">
+                              <div className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${
+                                expressBump ? 'bg-[#00C853] border-[#00C853] text-white' : 'border-slate-300 bg-white'
+                              }`}>
+                                {expressBump && <CheckCircle2 className="w-3.5 h-3.5" />}
+                              </div>
+                            </div>
+                            <div className="flex-1 space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <img src="https://cloudfox-digital-products.s3.amazonaws.com/uploads/public/products/5MoUUkyDBSdnNvNr6OLWadKL56OdqKPsnVxtlDuE.png" alt="Receita Federal" className="h-5 w-auto object-contain shrink-0" />
+                                  <span className="text-xs font-black text-[#13315C] uppercase tracking-wide block font-sans">Prioridade Alfandegária + Frete Express</span>
+                                </div>
+                                <span className="text-xs font-black text-slate-900 shrink-0 font-sans">+ R$ 9,91</span>
+                              </div>
+                              <p className="text-xs text-slate-600 leading-relaxed font-medium font-sans">
+                                Fura fila na liberação alfandegária e prioridade máxima de entrega com prazo reduzido para até 24 horas úteis pós-pagamento.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="md:col-span-5 space-y-6">
+                      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm space-y-4">
+                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Informações do Pagador</h4>
+                        
+                        <div className="space-y-3 font-medium">
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-slate-500 font-bold uppercase block font-sans">Nome Completo</span>
+                            <input 
+                              type="text" 
+                              value={payerName} 
+                              onChange={e => setPayerName(e.target.value)} 
+                              placeholder="Nome completo do pagador"
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-700 outline-none focus:border-slate-300 transition-colors font-sans"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-slate-500 font-bold uppercase block font-sans">E-mail</span>
+                            <input 
+                              type="email" 
+                              value={payerEmail} 
+                              onChange={e => setPayerEmail(e.target.value)} 
+                              placeholder="nome@exemplo.com"
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-700 outline-none focus:border-slate-300 transition-colors font-sans"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-slate-500 font-bold uppercase block font-sans">CPF do Pagador (11 dígitos)</span>
+                            <input 
+                              type="text" 
+                              value={payerCpf} 
+                              onChange={e => setPayerCpf(e.target.value.replace(/\D/g, '').slice(0, 11))} 
+                              placeholder="000.000.000-00"
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-700 outline-none focus:border-slate-300 transition-colors font-mono"
+                            />
+                            <span className="text-[9px] text-slate-400 block font-sans">O CPF digitado deve ser válido matematicamente para o processamento.</span>
+                          </div>
+                        </div>
+
+                        <div className="pt-4 border-t border-slate-100 space-y-2 text-xs font-sans font-medium">
+                          <div className="flex items-center justify-between text-slate-500">
+                            <span>Valor Base:</span>
+                            <span>R$ {baseValor.toFixed(2)}</span>
+                          </div>
+                          {bradescoBump && (
+                            <div className="flex items-center justify-between text-slate-500">
+                              <span>Seguro Bradesco:</span>
+                              <span>R$ 14,76</span>
+                            </div>
+                          )}
+                          {expressBump && (
+                            <div className="flex items-center justify-between text-slate-500">
+                              <span>Frete Express:</span>
+                              <span>R$ 9,91</span>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between text-sm font-black text-slate-900 pt-1">
+                            <span>Total Geral:</span>
+                            <span className="text-lg text-emerald-600">R$ {total.toFixed(2)}</span>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={handleGerarPix}
+                          disabled={checkoutLoading || !payerCpf || payerCpf.length < 11}
+                          className="w-full py-4 bg-[#00C853] hover:bg-[#00E676] disabled:opacity-50 text-white font-extrabold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm uppercase tracking-wider font-sans"
+                        >
+                          {checkoutLoading ? (
+                            <>
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                              <span>Gerando Pix...</span>
+                            </>
+                          ) : (
+                            <>
+                              <CreditCard className="w-4 h-4" />
+                              <span>Gerar PIX</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          onClick={() => setShowCheckout(false)}
+                          className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-lg transition-colors border border-slate-200 font-sans"
+                        >
+                          Cancelar e Voltar ao Rastreamento
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6">
 
             {/* ⚠️ ALERTA DESTACADO DA TAXA DE LIBERAÇÃO / RETENTATIVA DE ENTREGA */}
             {(data.taxa_info?.exibir || data.status === 'pendente_taxa') && (
@@ -246,14 +650,23 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
                     </div>
                   </div>
 
-                  <a
-                    href={data.taxa_info?.link || '#'}
-                    target={data.taxa_info?.link ? '_blank' : '_self'}
-                    rel="noopener noreferrer"
-                    className="w-full sm:w-auto px-6 py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-xl text-center text-sm shadow-xl transition-all hover:scale-105 flex items-center justify-center gap-2"
-                  >
-                    💳 Pagar Taxa de Liberação e Reenvio
-                  </a>
+                  {data.taxa_info?.veopag_enabled ? (
+                    <button
+                      onClick={() => setShowCheckout(true)}
+                      className="w-full sm:w-auto px-6 py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-xl text-center text-sm shadow-xl transition-all hover:scale-105 flex items-center justify-center gap-2"
+                    >
+                      💳 Pagar Taxa de Liberação e Reenvio
+                    </button>
+                  ) : (
+                    <a
+                      href={data.taxa_info?.link || '#'}
+                      target={data.taxa_info?.link ? '_blank' : '_self'}
+                      rel="noopener noreferrer"
+                      className="w-full sm:w-auto px-6 py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-xl text-center text-sm shadow-xl transition-all hover:scale-105 flex items-center justify-center gap-2"
+                    >
+                      💳 Pagar Taxa de Liberação e Reenvio
+                    </a>
+                  )}
                 </div>
               </div>
             )}
@@ -466,12 +879,14 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
             )}
 
           </div>
+          )
         ) : null}
 
         {/* 🤖 WIDGET DE CHATBOT COM IA FLUTUANTE */}
-        <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
-          {showAiChat && (
-            <div className="w-[340px] sm:w-[380px] h-[480px] bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5">
+        {!showCheckout && (
+          <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+            {showAiChat && (
+              <div className="w-[340px] sm:w-[380px] h-[480px] bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5">
               {/* Header do Chat */}
               <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -563,6 +978,7 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
             </button>
           </div>
         </div>
+        )}
 
       </div>
     </div>

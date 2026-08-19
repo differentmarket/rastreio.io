@@ -40,7 +40,10 @@ ADD COLUMN IF NOT EXISTS ai_model TEXT DEFAULT 'gpt-4o-mini',
 ADD COLUMN IF NOT EXISTS ai_tone TEXT DEFAULT 'amigavel',
 ADD COLUMN IF NOT EXISTS ai_temperature NUMERIC DEFAULT 0.7,
 ADD COLUMN IF NOT EXISTS ai_coupon_code TEXT,
-ADD COLUMN IF NOT EXISTS ai_delay_days INT DEFAULT 1;
+ADD COLUMN IF NOT EXISTS ai_delay_days INT DEFAULT 1,
+ADD COLUMN IF NOT EXISTS veopag_client_id TEXT,
+ADD COLUMN IF NOT EXISTS veopag_client_secret TEXT,
+ADD COLUMN IF NOT EXISTS veopag_enabled BOOLEAN DEFAULT false;
 
 -- 3. Vincular store_id em 'orders' e 'trackings' se existirem
 DO $$

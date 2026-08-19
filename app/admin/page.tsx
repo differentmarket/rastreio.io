@@ -231,6 +231,11 @@ export default function AdminPage() {
   const [taxaValor, setTaxaValor] = useState('27.90');
   const [taxaLinkPagamento, setTaxaLinkPagamento] = useState('');
 
+  // VeoPag Integration
+  const [veopagEnabled, setVeopagEnabled] = useState(false);
+  const [veopagClientId, setVeopagClientId] = useState('');
+  const [veopagClientSecret, setVeopagClientSecret] = useState('');
+
   // Upsell & Recompra
   const [upsellEnabled, setUpsellEnabled] = useState(false);
   const [upsellTitle, setUpsellTitle] = useState('Ganhe 15% OFF na sua próxima compra!');
@@ -588,6 +593,9 @@ export default function AdminPage() {
         setAiTone(activeStore.ai_tone || 'amigavel');
         setAiTemperature(typeof activeStore.ai_temperature === 'number' ? activeStore.ai_temperature : 0.7);
         setAiCouponCode(activeStore.ai_coupon_code || '');
+        setVeopagEnabled(activeStore.veopag_enabled || false);
+        setVeopagClientId(activeStore.veopag_client_id || '');
+        setVeopagClientSecret(activeStore.veopag_client_secret || '');
       }
     } catch (err: any) {
       setSettingsError(err.message || 'Erro ao carregar.');
@@ -965,6 +973,9 @@ export default function AdminPage() {
             ai_tone: aiTone,
             ai_temperature: aiTemperature,
             ai_coupon_code: aiCouponCode,
+            veopag_enabled: veopagEnabled,
+            veopag_client_id: veopagClientId,
+            veopag_client_secret: veopagClientSecret,
           }),
         });
         setActiveStore((prev: any) => prev ? ({
@@ -985,6 +996,9 @@ export default function AdminPage() {
           ai_tone: aiTone,
           ai_temperature: aiTemperature,
           ai_coupon_code: aiCouponCode,
+          veopag_enabled: veopagEnabled,
+          veopag_client_id: veopagClientId,
+          veopag_client_secret: veopagClientSecret,
         }) : null);
       }
 
@@ -2525,6 +2539,49 @@ export default function AdminPage() {
                       <SettingsInput label="E-mail de Remetente (From)" value={resendFromEmail} onChange={setResendFromEmail} placeholder="Rastreio <noreply@seudominio.com>" hint="Formato: Nome <remetente@dominio.com>" />
                       <SettingsInput label="URL Pública do App" value={nextPublicAppUrl} onChange={setNextPublicAppUrl} placeholder="https://seudominio.com" hint="Utilizada para gerar os links de rastreio." />
                     </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-800 space-y-4">
+                    <div>
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        💳 Integração VeoPag (Checkout Pix Próprio)
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">Configure as credenciais para que o cliente pague a taxa de liberação diretamente na página de rastreio.</p>
+                    </div>
+
+                    <label className="flex items-center gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={veopagEnabled} 
+                        onChange={e => setVeopagEnabled(e.target.checked)} 
+                        className="w-4 h-4 rounded text-indigo-600 bg-slate-900 border-slate-700 focus:ring-indigo-500" 
+                      />
+                      <div>
+                        <span className="text-xs font-bold text-white block">Ativar Checkout Pix Próprio via VeoPag</span>
+                        <span className="text-[10px] text-slate-400 block">Se desativado, o botão de pagamento direciona para o link de checkout externo configurado.</span>
+                      </div>
+                    </label>
+
+                    {veopagEnabled && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                        <SettingsInput 
+                          label="VeoPag Client ID" 
+                          value={veopagClientId} 
+                          onChange={setVeopagClientId} 
+                          placeholder="minhaloja_ABCD1234" 
+                          hint="ID do cliente fornecido pela VeoPag."
+                        />
+                        <SettingsInput 
+                          label="VeoPag Client Secret" 
+                          value={veopagClientSecret} 
+                          onChange={setVeopagClientSecret} 
+                          placeholder="seu_client_secret" 
+                          type="password" 
+                          mono 
+                          hint="Chave secreta de acesso à API."
+                        />
+                      </div>
+                    )}
                   </div>
 
                   <div className="pt-4 border-t border-slate-800 space-y-4">
