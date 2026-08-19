@@ -106,7 +106,7 @@ export async function GET(
     // Busca o rastreamento com dados do pedido, cliente e loja
     const { data: tracking, error } = await supabaseAdmin
       .from('trackings')
-      .select('codigo_rastreio, status, historico, updated_at, created_at, store_id, orders ( id, numero_pedido, created_at, valor_total, customer_id, store_id, itens )')
+      .select('codigo_rastreio, status, historico, updated_at, created_at, store_id, orders ( id, numero_pedido, created_at, valor_total, customer_id, store_id, itens, addresses ( cidade, estado ) )')
       .eq('codigo_rastreio', codigo.toUpperCase().trim())
       .maybeSingle();
 
@@ -131,7 +131,7 @@ export async function GET(
     if (targetStoreId) {
       const { data: store } = await supabaseAdmin
         .from('stores')
-        .select('nome_loja, logo_url, primary_color, banner_url, banner_link, whatsapp_suporte, veopag_enabled')
+        .select('nome_loja, logo_url, primary_color, banner_url, banner_link, whatsapp_suporte, veopag_enabled, empresa_cidade, empresa_estado')
         .eq('id', targetStoreId)
         .maybeSingle();
       if (store) {
@@ -223,13 +223,47 @@ export async function GET(
     if (history.length <= 1 && orderCreatedAtStr && status !== 'extraviado') {
       const simulatedHistory = [...history];
 
+      // Determinar dados de localidade reais
+      const cidadeOrigem = storeCustomization?.empresa_cidade?.trim() || 'São Paulo';
+      const estadoOrigem = (storeCustomization?.empresa_estado?.trim() || 'SP').toUpperCase();
+      const cidadeDestino = (orderData as any)?.addresses?.cidade?.trim() || 'Curitiba';
+      const estadoDestino = ((orderData as any)?.addresses?.estado?.trim() || 'PR').toUpperCase();
+
+      const mapHubs: Record<string, string> = {
+        SP: 'Cajamar - SP',
+        RJ: 'Rio de Janeiro - RJ',
+        MG: 'Contagem - MG',
+        ES: 'Vitória - ES',
+        PR: 'Pinhais - PR',
+        SC: 'Pinhais - PR',
+        RS: 'Pinhais - PR',
+        DF: 'Brasília - DF',
+        GO: 'Brasília - DF',
+        MT: 'Brasília - DF',
+        MS: 'Pinhais - PR',
+        PE: 'Recife - PE',
+        PB: 'Recife - PE',
+        RN: 'Recife - PE',
+        AL: 'Recife - PE',
+        SE: 'Recife - PE',
+        BA: 'Salvador - BA',
+        MA: 'São Luís - MA'
+      };
+
+      const getHubName = (uf: string) => {
+        return mapHubs[uf] || `Unidade de Tratamento, ${uf}`;
+      };
+
+      const localHubOrigem = getHubName(estadoOrigem);
+      const localHubDestino = getHubName(estadoDestino);
+
       // 1. Postado
       if (simulatedHistory.length === 0) {
         simulatedHistory.push({
           status: 'postado',
           data: orderCreatedAt.toISOString(),
           descricao: 'Pedido confirmado e em preparação para envio.',
-          local: 'Centro de Distribuição'
+          local: `Centro de Distribuição, ${cidadeOrigem} - ${estadoOrigem}`
         });
       }
 
@@ -240,7 +274,7 @@ export async function GET(
           status: 'postado',
           data: postadoExtraDate.toISOString(),
           descricao: 'Objeto preparado e etiquetado para envio.',
-          local: 'Central de Logística, São Paulo - SP'
+          local: `Central de Logística, ${cidadeOrigem} - ${estadoOrigem}`
         });
       }
 
@@ -251,7 +285,7 @@ export async function GET(
           status: 'postado',
           data: postadoEncaminhadoDate.toISOString(),
           descricao: 'Objeto recebido na unidade de tratamento de origem.',
-          local: 'Agência dos Correios, São Paulo - SP'
+          local: `Agência dos Correios, ${cidadeOrigem} - ${estadoOrigem}`
         });
       }
 
@@ -262,19 +296,20 @@ export async function GET(
           status: 'em_transito',
           data: transitoDate.toISOString(),
           descricao: 'Objeto encaminhado para Unidade de Tratamento',
-          local: 'Unidade de Tratamento, Curitiba - PR'
+          local: `Unidade de Tratamento, ${localHubOrigem}`
         });
         status = 'em_transito';
       }
 
-      // 2.1 Em Trânsito - Segunda atualização
+      // 2.1 Em Trânsito - Segunda atualização (chegada no hub destino se for interestadual, ou apenas confirmação no hub local se for do mesmo estado)
       const transitoChegadaDate = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + (delayPostado + 0.5) * 24 * 60 * 60 * 1000));
       if (daysDiff >= (delayPostado + 0.5) && transitoChegadaDate.getTime() <= Date.now()) {
+        const destHub = estadoOrigem === estadoDestino ? localHubOrigem : localHubDestino;
         simulatedHistory.push({
           status: 'em_transito',
           data: transitoChegadaDate.toISOString(),
           descricao: 'Objeto recebido na Unidade de Tratamento de destino.',
-          local: 'Unidade de Tratamento, Curitiba - PR'
+          local: `Unidade de Tratamento, ${destHub}`
         });
       }
 
@@ -285,7 +320,7 @@ export async function GET(
           status: 'em_transito',
           data: transitoLocalDate.toISOString(),
           descricao: 'Objeto encaminhado para Unidade de Distribuição',
-          local: 'CDD Centro, Curitiba - PR'
+          local: `CDD Centro, ${cidadeDestino} - ${estadoDestino}`
         });
       }
 
@@ -296,7 +331,7 @@ export async function GET(
           status: 'saiu_para_entrega',
           data: saiuDate.toISOString(),
           descricao: 'Objeto saiu para entrega ao destinatário',
-          local: 'CDD Centro, Curitiba - PR'
+          local: `CDD Centro, ${cidadeDestino} - ${estadoDestino}`
         });
         status = 'saiu_para_entrega';
       }
@@ -310,7 +345,7 @@ export async function GET(
             status: 'saiu_para_entrega',
             data: dia9Date.toISOString(),
             descricao: '1ª tentativa de entrega não atendida - Carteiro não atendido.',
-            local: 'CDD Distribuição Local'
+            local: `CDD Centro, ${cidadeDestino} - ${estadoDestino}`
           });
         }
 
@@ -321,7 +356,7 @@ export async function GET(
             status: 'saiu_para_entrega',
             data: dia10Date.toISOString(),
             descricao: '2ª tentativa de entrega não atendida - Destinatário ausente.',
-            local: 'CDD Distribuição Local'
+            local: `CDD Centro, ${cidadeDestino} - ${estadoDestino}`
           });
         }
 
@@ -332,7 +367,7 @@ export async function GET(
             status: 'pendente_taxa',
             data: dia11Date.toISOString(),
             descricao: '3ª tentativa de entrega não atendida. Objeto retido - Pendente de pagamento de taxa para liberação do reenvio.',
-            local: 'Central de Distribuição dos Correios / Alfândega'
+            local: `Central de Distribuição, ${cidadeDestino} - ${estadoDestino} / Alfândega`
           });
           status = 'pendente_taxa';
         }
@@ -344,7 +379,7 @@ export async function GET(
             status: 'entregue',
             data: entregueDate.toISOString(),
             descricao: 'Objeto entregue ao destinatário',
-            local: 'Curitiba - PR'
+            local: `${cidadeDestino} - ${estadoDestino}`
           });
           status = 'entregue';
         }
