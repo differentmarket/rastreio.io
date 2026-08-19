@@ -367,7 +367,7 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
                     <div className="flex flex-col items-center justify-center space-y-4 border-b md:border-b-0 md:border-r border-slate-100 pb-6 md:pb-0 md:pr-6">
                       <span className="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider">Aguardando Pagamento</span>
                       <img 
-                        src={`https://chart.googleapis.com/chart?chs=220x220&cht=qr&chl=${encodeURIComponent(pixData.qrcode)}`} 
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(pixData.qrcode)}`} 
                         alt="QR Code do Pix" 
                         className="w-48 h-48 border border-slate-200 rounded-xl p-2 bg-white"
                       />
