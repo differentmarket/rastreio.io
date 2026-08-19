@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Component, ReactNode } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import {
   Package, Search, Shield, LogOut, ChevronRight, Loader2, Calendar,
@@ -97,8 +97,67 @@ function EmailBadge({ enviado, data }: { enviado?: boolean; data?: string | null
   );
 }
 
-// ─────────────── Main Component ───────────────
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class AdminErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: any) {
+    console.error('Admin Error Boundary caught an error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+          <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full space-y-4 shadow-2xl">
+            <div className="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <h2 className="text-base font-bold text-white">Painel Temporariamente Indisponível</h2>
+            <p className="text-xs text-slate-400">
+              {this.state.error?.message || 'Ocorreu um erro ao carregar os componentes do painel.'}
+            </p>
+            <button
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                window.location.reload();
+              }}
+              className="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-xl text-xs font-bold text-white transition-all cursor-pointer shadow-lg shadow-indigo-950/50"
+            >
+              Recarregar Painel
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function AdminPage() {
+  return (
+    <AdminErrorBoundary>
+      <AdminPageInner />
+    </AdminErrorBoundary>
+  );
+}
+
+function AdminPageInner(): any {
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [email, setEmail] = useState('');
@@ -1610,8 +1669,8 @@ export default function AdminPage() {
                   <Store className="w-4.5 h-4.5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-extrabold text-white truncate leading-tight">{activeStore.nome_loja}</p>
-                  <p className="text-[10px] font-mono text-indigo-400 truncate mt-0.5">{activeStore.shopify_domain}</p>
+                  <p className="text-xs font-extrabold text-white truncate leading-tight">{activeStore?.nome_loja || 'Minha Loja'}</p>
+                  <p className="text-[10px] font-mono text-indigo-400 truncate mt-0.5">{activeStore?.shopify_domain || ''}</p>
                 </div>
               </div>
 
@@ -1679,12 +1738,12 @@ export default function AdminPage() {
                   {activeTab === 'settings' && '⚙️ Configurações da Loja Shopify'}
                   {activeTab === 'members' && '👥 Membros e Acessos da Loja'}
                 </h2>
-                <p className="text-[10px] text-slate-400">Loja ativa: <span className="text-indigo-400 font-bold">{activeStore.nome_loja}</span></p>
+                <p className="text-[10px] text-slate-400">Loja ativa: <span className="text-indigo-400 font-bold">{activeStore?.nome_loja || 'Loja'}</span></p>
               </div>
 
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => fetchOrders(activeStore.id)}
+                  onClick={() => fetchOrders(activeStore?.id)}
                   disabled={loadingOrders}
                   className="px-3 py-1.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 rounded-xl text-xs text-slate-300 flex items-center gap-1.5 cursor-pointer"
                 >
@@ -2772,7 +2831,7 @@ export default function AdminPage() {
             )}
 
             {/* ═══════ Zona de Perigo ═══════ */}
-            {!loadingSettings && (
+            {!loadingSettings && activeStore && (
               <div className="bg-slate-900 border border-red-950/40 rounded-2xl overflow-hidden shadow-xl">
                 <div className="px-6 py-4 bg-gradient-to-r from-red-600/10 to-rose-600/5 border-b border-red-900/30 flex items-center gap-3">
                   <div className="p-2.5 rounded-xl bg-red-500/15 text-red-400 border border-red-500/20"><AlertTriangle className="w-5 h-5" /></div>
@@ -2789,7 +2848,7 @@ export default function AdminPage() {
                         Isso apagará permanentemente a loja, pedidos, históricos e conversas.
                       </p>
                     </div>
-                    <button type="button" onClick={() => handleDeleteStore(activeStore.id)}
+                    <button type="button" onClick={() => activeStore?.id && handleDeleteStore(activeStore.id)}
                       className="py-2.5 px-4 bg-red-600/10 hover:bg-red-650 border border-red-500/20 hover:border-red-600 rounded-xl text-xs font-bold text-red-400 hover:text-white transition-all shrink-0 cursor-pointer shadow-sm">
                       Excluir Loja Permanentemente
                     </button>
