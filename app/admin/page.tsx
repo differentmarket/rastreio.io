@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, Component, ReactNode } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import {
   Package, Search, Shield, LogOut, ChevronRight, Loader2, Calendar,
@@ -97,67 +97,8 @@ function EmailBadge({ enviado, data }: { enviado?: boolean; data?: string | null
   );
 }
 
-interface ErrorBoundaryProps {
-  children: ReactNode;
-}
-
-interface ErrorBoundaryState {
-  hasError: boolean;
-  error: Error | null;
-}
-
-class AdminErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: any) {
-    console.error('Admin Error Boundary caught an error:', error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-          <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full space-y-4 shadow-2xl">
-            <div className="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center mx-auto">
-              <AlertTriangle className="w-6 h-6" />
-            </div>
-            <h2 className="text-base font-bold text-white">Painel Temporariamente Indisponível</h2>
-            <p className="text-xs text-slate-400">
-              {this.state.error?.message || 'Ocorreu um erro ao carregar os componentes do painel.'}
-            </p>
-            <button
-              onClick={() => {
-                this.setState({ hasError: false, error: null });
-                window.location.reload();
-              }}
-              className="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-xl text-xs font-bold text-white transition-all cursor-pointer shadow-lg shadow-indigo-950/50"
-            >
-              Recarregar Painel
-            </button>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
+// ─────────────── Main Component ───────────────
 export default function AdminPage() {
-  return (
-    <AdminErrorBoundary>
-      <AdminPageInner />
-    </AdminErrorBoundary>
-  );
-}
-
-function AdminPageInner(): any {
   const [mounted, setMounted] = useState(false);
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
