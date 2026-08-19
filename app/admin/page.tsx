@@ -336,12 +336,32 @@ function AdminPageInner(): any {
 
   // ── Auth ──
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
+    let timer: NodeJS.Timeout;
+
+    // Timeout de segurança de 2.5s para evitar travamentos de tela em branco
+    timer = setTimeout(() => {
+      setAuthLoading(false);
+    }, 2500);
+
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        setSession(session);
+      })
+      .catch(() => { /* silent */ })
+      .finally(() => {
+        clearTimeout(timer);
+        setAuthLoading(false);
+      });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+      setSession(s);
       setAuthLoading(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
-    return () => subscription.unsubscribe();
+
+    return () => {
+      clearTimeout(timer);
+      subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -1230,7 +1250,7 @@ function AdminPageInner(): any {
   // ── Loading ──
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white" style={{ backgroundColor: '#020617', minHeight: '100vh' }}>
         <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
       </div>
     );
@@ -1239,7 +1259,7 @@ function AdminPageInner(): any {
   // ── Login Page ──
   if (!session) {
     return (
-      <div className="flex flex-col flex-1 items-center justify-center min-h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-zinc-950 text-white px-4">
+      <div className="flex flex-col flex-1 items-center justify-center min-h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-zinc-950 text-white px-4" style={{ backgroundColor: '#020617', minHeight: '100vh' }}>
         <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl">
           <div className="text-center mb-8">
             <div className="inline-flex p-3 rounded-full bg-indigo-500/10 text-indigo-400 mb-3">
