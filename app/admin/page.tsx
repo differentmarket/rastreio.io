@@ -2534,6 +2534,39 @@ export default function AdminPage() {
                 </form>
               )}
             </div>
+
+            {/* Zona de Perigo (Danger Zone) */}
+            {!loadingSettings && (
+              <div className="bg-slate-900 border border-red-950/40 rounded-2xl p-6 sm:p-8 shadow-2xl mt-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 rounded-xl bg-red-500/10 text-red-400">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-bold text-white">Zona de Perigo</h2>
+                    <p className="text-xs text-slate-400">Ações irreversíveis para esta loja</p>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-red-950/10 border border-red-900/20 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-bold text-white">Desconectar e Excluir Loja</p>
+                    <p className="text-[10px] text-slate-400 mt-1 max-w-md">
+                      Isso apagará permanentemente a loja, todos os pedidos, históricos de rastreamento e conversas associadas de forma irreversível.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteStore(activeStore.id)}
+                    className="py-2.5 px-4 bg-red-600/10 hover:bg-red-650 border border-red-500/20 hover:border-red-600 rounded-xl text-xs font-bold text-red-400 hover:text-white transition-all shrink-0 cursor-pointer shadow-sm hover:shadow-red-950/50"
+                  >
+                    Excluir Loja Permanentemente
+                  </button>
+                </div>
+              </div>
+            )}
+
           </div>
         </div>
       )}
