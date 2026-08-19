@@ -37,6 +37,50 @@ export async function POST(
       return NextResponse.json({ error: 'Loja associada não encontrada.' }, { status: 404 });
     }
 
+    // Buscar o CPF real descriptografado do cliente associado se o documento fornecido for mascarado ou incompleto
+    let realDocument = document ? document.replace(/\D/g, '') : '';
+    if (!realDocument || realDocument.includes('*') || realDocument.length < 11) {
+      const { data: ord } = await supabaseAdmin
+        .from('trackings')
+        .select('orders ( customer_id )')
+        .eq('id', tracking.id)
+        .maybeSingle();
+
+      const customerId = (ord?.orders as any)?.customer_id;
+      if (customerId) {
+        const { data: customer } = await supabaseAdmin
+          .from('customers')
+          .select('cpf_encrypted')
+          .eq('id', customerId)
+          .maybeSingle();
+
+        if (customer && customer.cpf_encrypted) {
+          try {
+            let bufferCpf: Buffer;
+            if (typeof customer.cpf_encrypted === 'string') {
+              const hex = customer.cpf_encrypted.startsWith('\\x') 
+                ? customer.cpf_encrypted.substring(2) 
+                : customer.cpf_encrypted;
+              bufferCpf = Buffer.from(hex, 'hex');
+            } else {
+              bufferCpf = Buffer.from(customer.cpf_encrypted);
+            }
+            const { descriptografar } = require('@/lib/criptografia');
+            const decryptedCpf = descriptografar(bufferCpf);
+            if (decryptedCpf) {
+              realDocument = decryptedCpf.replace(/\D/g, '');
+            }
+          } catch (errDec) {
+            console.error('Erro ao descriptografar CPF do cliente no checkout:', errDec);
+          }
+        }
+      }
+    }
+
+    if (!realDocument || realDocument.length < 11) {
+      realDocument = '12345678909';
+    }
+
     // Calcular o valor total com os order bumps selecionados
     const baseValor = parseFloat(store.taxa_valor || '27.90');
     let valorTotal = baseValor;
@@ -110,7 +154,7 @@ export async function POST(
         payer: {
           name: name || 'Cliente Rastreio',
           email: email || 'noreply@pagamento.digital',
-          document: document ? document.replace(/\D/g, '') : '12345678909',
+          document: realDocument,
         },
         platform: 'RASTREIO_IO',
       }),

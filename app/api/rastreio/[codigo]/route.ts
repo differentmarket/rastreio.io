@@ -106,7 +106,7 @@ export async function GET(
     // Busca o rastreamento com dados do pedido, cliente e loja
     const { data: tracking, error } = await supabaseAdmin
       .from('trackings')
-      .select('codigo_rastreio, status, historico, updated_at, created_at, store_id, orders ( id, numero_pedido, created_at, valor_total, customer_id, store_id )')
+      .select('codigo_rastreio, status, historico, updated_at, created_at, store_id, orders ( id, numero_pedido, created_at, valor_total, customer_id, store_id, itens )')
       .eq('codigo_rastreio', codigo.toUpperCase().trim())
       .maybeSingle();
 
@@ -357,6 +357,7 @@ export async function GET(
         atualizado_em: tracking.updated_at,
         customer: customerInfo,
         numero_pedido: orderData?.numero_pedido || null,
+        itens: orderData?.itens || [],
         store: storeCustomization,
         taxa_info: {
           exibir: taxaEnabled && daysDiff >= taxaDiaExibicao,
@@ -382,6 +383,7 @@ export async function GET(
       atualizado_em: tracking.updated_at,
       customer: customerInfo,
       numero_pedido: orderData?.numero_pedido || null,
+      itens: orderData?.itens || [],
       store: storeCustomization,
       taxa_info: {
         exibir: taxaEnabled && daysDiff >= taxaDiaExibicao,

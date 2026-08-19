@@ -22,6 +22,7 @@ interface RastreioData {
     cpf: string;
   } | null;
   numero_pedido?: string | null;
+  itens?: any[];
   store?: {
     nome_loja?: string;
     logo_url?: string | null;
@@ -173,6 +174,7 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
       if (jsonData.customer) {
         setPayerName(jsonData.customer.nome || '');
         setPayerEmail(jsonData.customer.email || '');
+        setPayerCpf(jsonData.customer.cpf || '');
       }
       
       // Mensagem inicial padrão da IA
@@ -531,10 +533,10 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
                             <span className="text-[10px] text-slate-500 font-bold uppercase block font-sans">Nome Completo</span>
                             <input 
                               type="text" 
+                              readOnly
                               value={payerName} 
-                              onChange={e => setPayerName(e.target.value)} 
                               placeholder="Nome completo do pagador"
-                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-700 outline-none focus:border-slate-300 transition-colors font-sans"
+                              className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-500 outline-none cursor-not-allowed font-sans"
                             />
                           </div>
 
@@ -542,23 +544,23 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
                             <span className="text-[10px] text-slate-500 font-bold uppercase block font-sans">E-mail</span>
                             <input 
                               type="email" 
+                              readOnly
                               value={payerEmail} 
-                              onChange={e => setPayerEmail(e.target.value)} 
                               placeholder="nome@exemplo.com"
-                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-700 outline-none focus:border-slate-300 transition-colors font-sans"
+                              className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-500 outline-none cursor-not-allowed font-sans"
                             />
                           </div>
 
                           <div className="space-y-1">
-                            <span className="text-[10px] text-slate-500 font-bold uppercase block font-sans">CPF do Pagador (11 dígitos)</span>
+                            <span className="text-[10px] text-slate-500 font-bold uppercase block font-sans">CPF do Pagador (Protegido)</span>
                             <input 
                               type="text" 
+                              readOnly
                               value={payerCpf} 
-                              onChange={e => setPayerCpf(e.target.value.replace(/\D/g, '').slice(0, 11))} 
                               placeholder="000.000.000-00"
-                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-700 outline-none focus:border-slate-300 transition-colors font-mono"
+                              className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-500 outline-none cursor-not-allowed font-mono"
                             />
-                            <span className="text-[9px] text-slate-400 block font-sans">O CPF digitado deve ser válido matematicamente para o processamento.</span>
+                            <span className="text-[9px] text-slate-400 block font-sans">Os dados de faturamento foram pré-configurados com base no pedido para sua segurança.</span>
                           </div>
                         </div>
 
@@ -587,7 +589,7 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
 
                         <button
                           onClick={handleGerarPix}
-                          disabled={checkoutLoading || !payerCpf || payerCpf.length < 11}
+                          disabled={checkoutLoading || !payerCpf}
                           className="w-full py-4 bg-[#00C853] hover:bg-[#00E676] disabled:opacity-50 text-white font-extrabold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm uppercase tracking-wider font-sans"
                         >
                           {checkoutLoading ? (
@@ -776,6 +778,34 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
                       </div>
                     )}
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* 🛍️ Itens do Pedido */}
+            {data.itens && data.itens.length > 0 && (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4 animate-fadeIn">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <ShoppingBag className="w-5 h-5 text-indigo-400" /> Itens do Pedido
+                </h3>
+                <div className="divide-y divide-slate-800/60 space-y-3">
+                  {data.itens.map((item: any, idx: number) => (
+                    <div key={idx} className="flex items-center justify-between pt-3 first:pt-0 gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-400">
+                          <Package className="w-5 h-5 text-indigo-500/80" />
+                        </div>
+                        <div>
+                          <span className="font-semibold text-slate-200 text-sm block leading-tight">{item.title}</span>
+                          {item.sku && <span className="text-[10px] text-slate-500 font-mono">SKU: {item.sku}</span>}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-bold text-slate-200 block">Qtd: {item.quantity}</span>
+                        {item.price && <span className="text-xs text-slate-400">R$ {parseFloat(item.price).toFixed(2)}</span>}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
