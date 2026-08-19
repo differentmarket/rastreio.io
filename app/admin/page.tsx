@@ -3201,15 +3201,15 @@ function InfoRow({ label, value, mono }: { label: string; value?: string | null;
 }
 
 function SettingsInput({
-  label, value, onChange, placeholder, type = 'text', hint, mono,
+  label, value, onChange, placeholder, type = 'text', hint, mono, required = false,
 }: {
   label: string; value: string; onChange: (v: string) => void;
-  placeholder?: string; type?: string; hint?: string; mono?: boolean;
+  placeholder?: string; type?: string; hint?: string; mono?: boolean; required?: boolean;
 }) {
   return (
     <div>
       <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">{label}</label>
-      <input type={type} required value={value} onChange={e => onChange(e.target.value)}
+      <input type={type} required={required} value={value} onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         className={`w-full px-4 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm ${mono ? 'font-mono' : ''}`} />
       {hint && <span className="text-[10px] text-slate-500 mt-1 block">{hint}</span>}
