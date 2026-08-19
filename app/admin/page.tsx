@@ -188,6 +188,9 @@ export default function AdminPage() {
   const [emailQueue, setEmailQueue] = useState<EmailQueueItem[]>([]);
   const [loadingQueue, setLoadingQueue] = useState(false);
   const [queueFilter, setQueueFilter] = useState<'todos' | 'enviados' | 'pendentes'>('todos');
+  const [queueSearch, setQueueSearch] = useState('');
+  const [queueStartDate, setQueueStartDate] = useState('');
+  const [queueEndDate, setQueueEndDate] = useState('');
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [batchSending, setBatchSending] = useState(false);
   const [batchResult, setBatchResult] = useState<string | null>(null);
@@ -521,7 +524,10 @@ export default function AdminPage() {
   const fetchEmailQueue = async () => {
     setLoadingQueue(true);
     try {
-      const res = await fetch('/api/fila-emails', { headers: getAuthHeaders() });
+      const url = activeStore?.id 
+        ? `/api/fila-emails?store_id=${activeStore.id}`
+        : '/api/fila-emails';
+      const res = await fetch(url, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error();
       setEmailQueue(await res.json());
     } catch { /* silent */ } finally {
@@ -1001,8 +1007,33 @@ export default function AdminPage() {
   });
 
   const filteredQueue = emailQueue.filter(o => {
-    if (queueFilter === 'enviados') return o.trackings?.email_enviado;
-    if (queueFilter === 'pendentes') return !o.trackings?.email_enviado;
+    // 1. Filtro por status de envio
+    if (queueFilter === 'enviados' && !o.trackings?.email_enviado) return false;
+    if (queueFilter === 'pendentes' && o.trackings?.email_enviado) return false;
+
+    // 2. Filtro de Texto
+    if (queueSearch) {
+      const q = queueSearch.toLowerCase();
+      const matchPedido = o.numero_pedido?.toLowerCase().includes(q);
+      const matchNome = o.customers?.nome?.toLowerCase().includes(q);
+      const matchEmail = o.customers?.email?.toLowerCase().includes(q);
+      const matchRastreio = o.trackings?.codigo_rastreio?.toLowerCase().includes(q);
+      if (!matchPedido && !matchNome && !matchEmail && !matchRastreio) return false;
+    }
+
+    // 3. Filtro por Período (criado em)
+    if (queueStartDate || queueEndDate) {
+      const itemDate = new Date(o.created_at);
+      if (queueStartDate) {
+        const start = new Date(queueStartDate + 'T00:00:00');
+        if (itemDate < start) return false;
+      }
+      if (queueEndDate) {
+        const end = new Date(queueEndDate + 'T23:59:59');
+        if (itemDate > end) return false;
+      }
+    }
+
     return true;
   });
 
@@ -1717,23 +1748,75 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Filters + Refresh */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex gap-1 bg-slate-900 border border-slate-800 rounded-xl p-1">
-                {(['todos', 'enviados', 'pendentes'] as const).map(f => (
-                  <button key={f} onClick={() => setQueueFilter(f)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${
-                      queueFilter === f ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
-                    }`}>
-                    {f}
-                  </button>
-                ))}
+            {/* Filtros + Pesquisa + Período */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4 shadow-md">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                
+                {/* Abas de status de envio */}
+                <div className="flex gap-1 bg-slate-950 border border-slate-800/80 rounded-xl p-1 shrink-0 w-fit">
+                  {(['todos', 'enviados', 'pendentes'] as const).map(f => (
+                    <button key={f} onClick={() => setQueueFilter(f)}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${
+                        queueFilter === f ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                      }`}>
+                      {f}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Filtro por Período */}
+                <div className="flex items-center gap-2 flex-wrap text-slate-300">
+                  <span className="text-xs text-slate-500 font-medium">Período:</span>
+                  <input 
+                    type="date" 
+                    value={queueStartDate}
+                    onChange={e => setQueueStartDate(e.target.value)}
+                    className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans"
+                  />
+                  <span className="text-xs text-slate-600">até</span>
+                  <input 
+                    type="date" 
+                    value={queueEndDate}
+                    onChange={e => setQueueEndDate(e.target.value)}
+                    className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans"
+                  />
+                  {(queueStartDate || queueEndDate) && (
+                    <button 
+                      onClick={() => { setQueueStartDate(''); setQueueEndDate(''); }}
+                      className="text-[10px] font-bold text-rose-400 hover:text-rose-300 transition-colors bg-rose-500/10 px-2 py-1 rounded-lg border border-rose-500/10 cursor-pointer"
+                    >
+                      Limpar datas
+                    </button>
+                  )}
+                </div>
+
+                {/* Botão de atualizar */}
+                <button onClick={fetchEmailQueue} disabled={loadingQueue}
+                  className="flex items-center justify-center gap-1.5 px-4 py-2 bg-slate-950 hover:bg-slate-800 border border-slate-800 disabled:opacity-50 rounded-xl text-xs text-slate-300 transition-all font-semibold shrink-0 cursor-pointer ml-auto md:ml-0">
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingQueue ? 'animate-spin' : ''}`} />
+                  Atualizar
+                </button>
               </div>
-              <button onClick={fetchEmailQueue} disabled={loadingQueue}
-                className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 border border-slate-800 hover:bg-slate-800 rounded-xl text-xs text-slate-400 transition-colors">
-                <RefreshCw className={`w-3.5 h-3.5 ${loadingQueue ? 'animate-spin' : ''}`} />
-                Atualizar
-              </button>
+
+              {/* Barra de Pesquisa de Texto */}
+              <div className="relative">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <input
+                  type="text"
+                  placeholder="Pesquisar por nome do cliente, e-mail, número do pedido ou código de rastreamento..."
+                  value={queueSearch}
+                  onChange={e => setQueueSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-950/80 border border-slate-800/80 rounded-xl text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-slate-500 transition-all"
+                />
+                {queueSearch && (
+                  <button 
+                    onClick={() => setQueueSearch('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs font-bold font-sans cursor-pointer bg-slate-800 px-1.5 py-0.5 rounded"
+                  >
+                    X
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Queue Table */}

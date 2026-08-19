@@ -12,6 +12,41 @@ export async function GET(req: NextRequest) {
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    const storeId = req.nextUrl.searchParams.get('store_id');
+
+    // Obter o email do usuário a partir do token
+    const authHeader = req.headers.get('authorization');
+    const token = authHeader ? authHeader.split(' ')[1] : null;
+    let userEmail = '';
+
+    if (token) {
+      try {
+        const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+        if (user) {
+          userEmail = user.email || '';
+        }
+      } catch (e) {
+        console.error('Erro ao obter usuário a partir do token no fila-emails:', e);
+      }
+    }
+
+    // Validar acesso à loja (se não for mock)
+    if (!supabaseUrl.includes('mock-project')) {
+      if (!storeId) {
+        return NextResponse.json({ error: 'store_id é obrigatório.' }, { status: 400 });
+      }
+
+      const { data: isAssociated, error: assocError } = await supabaseAdmin
+        .from('store_users')
+        .select('id')
+        .eq('store_id', storeId)
+        .eq('user_email', userEmail)
+        .maybeSingle();
+
+      if (assocError || !isAssociated) {
+        return NextResponse.json({ error: 'Acesso negado a esta loja.' }, { status: 403 });
+      }
+    }
 
     // Modo mock
     if (supabaseUrl.includes('mock-project')) {
@@ -107,7 +142,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Produção
-    const { data: orders, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from('orders')
       .select(`
         id,
@@ -118,8 +153,14 @@ export async function GET(req: NextRequest) {
         customers ( nome, email ),
         trackings ( codigo_rastreio, status, email_enviado, email_enviado_em, shopify_synced )
       `)
-      .eq('status_pedido', 'pago')
+      .in('status_pedido', ['pago', 'separacao', 'enviado', 'entregue'])
       .order('created_at', { ascending: false });
+
+    if (storeId) {
+      query = query.eq('store_id', storeId);
+    }
+
+    const { data: orders, error } = await query;
 
     if (error) {
       console.error('Erro ao buscar fila de e-mails:', error);
