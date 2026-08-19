@@ -317,21 +317,7 @@ export default function AdminPage() {
     }
   }, [session]);
 
-  useEffect(() => {
-    if (session) {
-      fetchOrders();
-      fetchStores();
-    } else {
-      setOrders([]);
-      setSelectedOrder(null);
-    }
-  }, [session]);
 
-  useEffect(() => {
-    if (session && activeTab === 'settings') fetchSettings();
-    if (session && activeTab === 'fila') fetchEmailQueue();
-    if (session && activeTab === 'members' && activeStore?.id) fetchStoreMembers(activeStore.id);
-  }, [session, activeTab, activeStore?.id]);
 
   // ── Fetch ──
   const getAuthHeaders = (): Record<string, string> => {
@@ -511,8 +497,8 @@ export default function AdminPage() {
     } catch { /* silent */ }
   };
 
-  const fetchOrders = async (overrideStoreId?: string) => {
-    setLoadingOrders(true);
+  const fetchOrders = async (overrideStoreId?: string, isSilent = false) => {
+    if (!isSilent) setLoadingOrders(true);
     const targetStore = overrideStoreId !== undefined ? overrideStoreId : selectedStoreId;
     try {
       const queryParam = targetStore && targetStore !== 'all' ? `?store_id=${targetStore}` : '';
@@ -520,26 +506,29 @@ export default function AdminPage() {
       if (!res.ok) throw new Error();
       setOrders(await res.json());
     } catch { /* silent */ } finally {
-      setLoadingOrders(false);
+      if (!isSilent) setLoadingOrders(false);
     }
   };
 
-  const fetchOrderDetail = async (orderId: string) => {
-    setLoadingDetail(true);
-    setUpdateError(null);
-    setEmailSent(false);
-    setEmailError(null);
-    setShopifyFulfilled(null);
+  const fetchOrderDetail = async (orderId: string, isSilent = false) => {
+    if (!isSilent) {
+      setLoadingDetail(true);
+      setUpdateError(null);
+      setEmailSent(false);
+      setEmailError(null);
+      setShopifyFulfilled(null);
+    }
     try {
       const res = await fetch(`/api/pedidos/${orderId}`, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error();
       const data = await res.json();
       setSelectedOrder(data);
-      setUpdateDesc('');
-      setUpdateLocal('');
+      if (!isSilent) {
+        setUpdateDesc('');
+        setUpdateLocal('');
+      }
     } catch { /* silent */ } finally {
-      setLoadingDetail(false);
-    }
+      if (!isSilent) setLoadingDetail(false);
   };
 
   const fetchEmailQueue = async () => {
@@ -556,7 +545,7 @@ export default function AdminPage() {
     }
   };
 
-  const fetchSettings = async () => {
+  async function fetchSettings() {
     setLoadingSettings(true);
     try {
       const res = await fetch('/api/settings', { headers: getAuthHeaders() });
@@ -636,6 +625,39 @@ export default function AdminPage() {
       setLoadingAiConversations(false);
     }
   };
+
+  useEffect(() => {
+    if (session) {
+      fetchOrders();
+      fetchStores();
+    } else {
+      setOrders([]);
+      setSelectedOrder(null);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (session && activeTab === 'settings') fetchSettings();
+    if (session && activeTab === 'fila') fetchEmailQueue();
+    if (session && activeTab === 'members' && activeStore?.id) fetchStoreMembers(activeStore.id);
+  }, [session, activeTab, activeStore?.id]);
+
+  // Polling automático em tempo real (10s) sem recarregar a página
+  useEffect(() => {
+    if (!session) return;
+    const interval = setInterval(() => {
+      if (activeTab === 'pedidos') {
+        fetchOrders(undefined, true);
+        if (selectedOrder?.id) {
+          fetchOrderDetail(selectedOrder.id, true);
+        }
+      } else if (activeTab === 'fila') {
+        fetchEmailQueue();
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [session, activeTab, selectedOrder?.id, selectedStoreId]);
 
   // ── Actions ──
   const handleLogin = async (e: React.FormEvent) => {
@@ -2451,71 +2473,83 @@ export default function AdminPage() {
       {/* ----------- TAB: CONFIGURACOES ----------- */}
       {activeTab === 'settings' && (
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-          <div className="max-w-2xl mx-auto">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 rounded-xl bg-violet-500/10 text-violet-400">
-                  <Store className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-white">Integração Shopify</h2>
-                  <p className="text-xs text-slate-400">Credenciais do App Privado na Shopify</p>
-                </div>
+          <div className="max-w-3xl mx-auto space-y-5">
+
+            {loadingSettings ? (
+              <div className="py-20 flex flex-col items-center text-slate-500">
+                <Loader2 className="w-6 h-6 animate-spin text-indigo-500 mb-2" />
+                <span className="text-xs">Carregando configurações...</span>
               </div>
+            ) : (
+              <form onSubmit={handleSaveSettings} className="space-y-5">
 
-              {loadingSettings ? (
-                <div className="py-12 flex flex-col items-center text-slate-500">
-                  <Loader2 className="w-6 h-6 animate-spin text-indigo-500 mb-2" />
-                  <span className="text-xs">Carregando...</span>
-                </div>
-              ) : (
-                <form onSubmit={handleSaveSettings} className="space-y-4">
-                  {settingsSuccess && <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs p-3.5 rounded-xl">✅ Configurações salvas com sucesso!</div>}
-                  {settingsError && <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-3.5 rounded-xl">{settingsError}</div>}
+                {settingsSuccess && <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs p-3.5 rounded-xl flex items-center gap-2 font-semibold">✅ Configurações salvas com sucesso!</div>}
+                {settingsError && <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-3.5 rounded-xl flex items-center gap-2 font-semibold">❌ {settingsError}</div>}
 
-                  <SettingsInput label="Domínio da Loja" value={shopifyDomain} onChange={setShopifyDomain} placeholder="exemplo.myshopify.com" hint="Insira apenas o subdomínio myshopify.com." />
-                  <SettingsInput label="Token de Acesso Admin API" value={shopifyToken} onChange={setShopifyToken} placeholder="shpat_xxxx" type="password" mono hint="Requer escopos read_orders e write_orders." />
-                  <SettingsInput label="Segredo do Webhook" value={shopifyWebhookSecret} onChange={setShopifyWebhookSecret} placeholder="Segredo de validação HMAC" type="password" mono />
-
-                  <div className="pt-4 border-t border-slate-800 space-y-4">
+                {/* ═══════ CARD 1: Shopify ═══════ */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                  <div className="px-6 py-4 bg-gradient-to-r from-emerald-600/10 to-teal-600/5 border-b border-slate-800 flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"><Store className="w-5 h-5" /></div>
                     <div>
-                      <h3 className="text-sm font-bold text-white">Simulação da Jornada de Rastreio</h3>
-                      <p className="text-xs text-slate-400 mt-0.5">Dias em cada status para exibição ao cliente.</p>
-                    </div>
-                    <div className="grid grid-cols-3 gap-3">
-                      <SettingsInput label="Postado → Trânsito (dias)" value={delayPostadoEmTransito} onChange={setDelayPostadoEmTransito} type="number" />
-                      <SettingsInput label="Trânsito → Saiu (dias)" value={delayEmTransitoSaiuEntrega} onChange={setDelayEmTransitoSaiuEntrega} type="number" />
-                      <SettingsInput label="Saiu → Entregue (dias)" value={delaySaiuEntregaEntregue} onChange={setDelaySaiuEntregaEntregue} type="number" />
+                      <h3 className="text-sm font-extrabold text-white">Integração Shopify</h3>
+                      <p className="text-[10px] text-slate-400">Credenciais do App Privado na Shopify</p>
                     </div>
                   </div>
+                  <div className="p-6 space-y-4">
+                    <SettingsInput label="Domínio da Loja" value={shopifyDomain} onChange={setShopifyDomain} placeholder="exemplo.myshopify.com" hint="Insira apenas o subdomínio myshopify.com." />
+                    <SettingsInput label="Token de Acesso Admin API" value={shopifyToken} onChange={setShopifyToken} placeholder="shpat_xxxx" type="password" mono hint="Requer escopos read_orders e write_orders." />
+                    <SettingsInput label="Segredo do Webhook" value={shopifyWebhookSecret} onChange={setShopifyWebhookSecret} placeholder="Segredo de validação HMAC" type="password" mono />
+                  </div>
+                </div>
 
-                  <div className="pt-4 border-t border-slate-800 space-y-4">
+                {/* ═══════ CARD 2: Jornada de Rastreio ═══════ */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                  <div className="px-6 py-4 bg-gradient-to-r from-indigo-600/10 to-violet-600/5 border-b border-slate-800 flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-indigo-500/15 text-indigo-400 border border-indigo-500/20"><Clock className="w-5 h-5" /></div>
                     <div>
-                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                        ⚡ Automação de E-mails Agendados
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-0.5">Prazos para disparo automático da Nota Fiscal e do E-mail de Rastreio ao Lead.</p>
+                      <h3 className="text-sm font-extrabold text-white">Simulação da Jornada de Rastreio</h3>
+                      <p className="text-[10px] text-slate-400">Dias de espera em cada status para exibição ao cliente</p>
                     </div>
+                  </div>
+                  <div className="p-6">
+                    <div className="grid grid-cols-3 gap-3">
+                      <SettingsInput label="Postado → Trânsito" value={delayPostadoEmTransito} onChange={setDelayPostadoEmTransito} type="number" hint="dias" />
+                      <SettingsInput label="Trânsito → Saiu" value={delayEmTransitoSaiuEntrega} onChange={setDelayEmTransitoSaiuEntrega} type="number" hint="dias" />
+                      <SettingsInput label="Saiu → Entregue" value={delaySaiuEntregaEntregue} onChange={setDelaySaiuEntregaEntregue} type="number" hint="dias" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* ═══════ CARD 3: Automação de E-mails ═══════ */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                  <div className="px-6 py-4 bg-gradient-to-r from-amber-600/10 to-orange-600/5 border-b border-slate-800 flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-amber-500/15 text-amber-400 border border-amber-500/20"><Zap className="w-5 h-5" /></div>
+                    <div>
+                      <h3 className="text-sm font-extrabold text-white">Automação de E-mails Agendados</h3>
+                      <p className="text-[10px] text-slate-400">Prazos para disparo automático de Nota Fiscal e Rastreio</p>
+                    </div>
+                  </div>
+                  <div className="p-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <SettingsInput 
-                        label="Envio da Nota Fiscal (Horas após compra)" 
-                        value={notaDelayHoras} 
-                        onChange={setNotaDelayHoras} 
-                        type="number" 
-                        hint="Tempo de espera em horas para enviar o e-mail da Nota Fiscal (Padrão: 2h)."
-                      />
-                      <div className="p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl flex flex-col justify-center">
-                        <span className="text-xs font-bold text-slate-300">📅 Envio de Rastreio ao Lead</span>
-                        <span className="text-[11px] text-slate-400 mt-1">Disparado automaticamente por e-mail no <strong>Próximo Dia Útil</strong> (pulando finais de semana e feriados).</span>
+                      <SettingsInput label="Envio da Nota Fiscal (Horas após compra)" value={notaDelayHoras} onChange={setNotaDelayHoras} type="number" hint="Padrão: 2h." />
+                      <div className="p-3.5 bg-slate-950/60 border border-slate-800/80 rounded-xl flex flex-col justify-center">
+                        <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">📅 Envio de Rastreio ao Lead</span>
+                        <span className="text-[11px] text-slate-400 mt-1">Disparado no <strong>Próximo Dia Útil</strong> (pula finais de semana).</span>
                       </div>
                     </div>
                   </div>
+                </div>
 
-                  <div className="pt-4 border-t border-slate-800 space-y-4">
+                {/* ═══════ CARD 4: Dados Fiscais ═══════ */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                  <div className="px-6 py-4 bg-gradient-to-r from-sky-600/10 to-cyan-600/5 border-b border-slate-800 flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-sky-500/15 text-sky-400 border border-sky-500/20"><FileText className="w-5 h-5" /></div>
                     <div>
-                      <h3 className="text-sm font-bold text-white">Dados Fiscais / Nota de Compra</h3>
-                      <p className="text-xs text-slate-400 mt-0.5">Dados da empresa impressos na nota fiscal de compra sem valor fiscal.</p>
+                      <h3 className="text-sm font-extrabold text-white">Dados Fiscais / Nota de Compra</h3>
+                      <p className="text-[10px] text-slate-400">Dados da empresa impressos na nota fiscal de compra</p>
                     </div>
+                  </div>
+                  <div className="p-6 space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <SettingsInput label="Razão Social / Nome Fantasia" value={empresaNome} onChange={setEmpresaNome} placeholder="Minha Empresa Ltda" />
                       <SettingsInput label="CNPJ" value={empresaCnpj} onChange={setEmpresaCnpj} placeholder="00.000.000/0001-00" />
@@ -2527,167 +2561,104 @@ export default function AdminPage() {
                       <SettingsInput label="CEP" value={empresaCep} onChange={setEmpresaCep} placeholder="01000-000" />
                     </div>
                   </div>
+                </div>
 
-                  <div className="pt-4 border-t border-slate-800 space-y-4">
-                    <div className="flex items-center justify-between">
+                {/* ═══════ CARD 5: Taxa de Despacho ═══════ */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                  <div className="px-6 py-4 bg-gradient-to-r from-rose-600/10 to-pink-600/5 border-b border-slate-800 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-xl bg-rose-500/15 text-rose-400 border border-rose-500/20"><AlertTriangle className="w-5 h-5" /></div>
                       <div>
-                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                          ⚠️ Taxa de Despacho Postal & Retentativas
-                        </h3>
-                        <p className="text-xs text-slate-400 mt-0.5">Regras para 3 tentativas de entrega (dias 9, 10, 11) e cobrança de taxa de liberação.</p>
+                        <h3 className="text-sm font-extrabold text-white">Taxa de Despacho Postal & Retentativas</h3>
+                        <p className="text-[10px] text-slate-400">Regras para tentativas de entrega e cobrança de taxa</p>
                       </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" checked={taxaEnabled} onChange={e => setTaxaEnabled(e.target.checked)} className="sr-only peer" />
-                        <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
-                      </label>
                     </div>
-
-                    {taxaEnabled && (
-                      <div className="space-y-4 pt-2">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <SettingsInput 
-                            label="Dias das 3 Retentativas" 
-                            value={taxaDiasTentativas} 
-                            onChange={setTaxaDiasTentativas} 
-                            placeholder="9,10,11" 
-                            hint="Dias após a compra em que ocorrem as tentativas não atendidas."
-                          />
-                          <SettingsInput 
-                            label="Dia para Exibir Alerta & Botão de Taxa" 
-                            value={taxaDiaExibicao} 
-                            onChange={setTaxaDiaExibicao} 
-                            type="number"
-                            hint="Dia a partir do qual a caixa de aviso e botão de pagamento surgem na tela (Padrão: 11)."
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <SettingsInput 
-                            label="Nome/Título da Taxa" 
-                            value={taxaNome} 
-                            onChange={setTaxaNome} 
-                            placeholder="Taxa de Despacho Postal e Liberação Alfandegária" 
-                          />
-                          <SettingsInput 
-                            label="Valor da Taxa (R$)" 
-                            value={taxaValor} 
-                            onChange={setTaxaValor} 
-                            placeholder="27.90" 
-                          />
-                        </div>
-
-                        <SettingsInput 
-                          label="Link da Página de Pagamento (Checkout da Taxa)" 
-                          value={taxaLinkPagamento} 
-                          onChange={setTaxaLinkPagamento} 
-                          placeholder="https://checkout.sualoja.com/taxa-liberacao" 
-                          hint="URL para onde o cliente será redirecionado ao clicar no botão 'Pagar Taxa de Liberação'."
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="pt-4 border-t border-slate-800 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                          🛍️ Banner de Upsell & Recompra no Rastreio
-                        </h3>
-                        <p className="text-xs text-slate-400 mt-0.5">Exibir oferta especial com cupom de desconto na tela de rastreamento do cliente.</p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" checked={upsellEnabled} onChange={e => setUpsellEnabled(e.target.checked)} className="sr-only peer" />
-                        <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
-                      </label>
-                    </div>
-
-                    {upsellEnabled && (
-                      <div className="space-y-4 pt-2">
-                        <SettingsInput label="Título da Oferta" value={upsellTitle} onChange={setUpsellTitle} placeholder="Ganhe 15% OFF na sua próxima compra!" />
-                        <SettingsInput label="Descrição da Oferta / Cupom" value={upsellDescription} onChange={setUpsellDescription} placeholder="Use o cupom CLIENTE15 no checkout e aproveite frete grátis." />
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <SettingsInput label="Link de Destino do Botão" value={upsellLink} onChange={setUpsellLink} placeholder="https://minhaloja.com/oferta-especial" />
-                          <SettingsInput label="URL da Imagem do Produto (Opcional)" value={upsellImageUrl} onChange={setUpsellImageUrl} placeholder="https://minhaloja.com/produto.jpg" />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="pt-4 border-t border-slate-800 space-y-4">
-                    <div>
-                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                        🤖 Assistente Virtual de IA (OpenAI)
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-0.5">Chave da OpenAI utilizada no Chatbot do Rastreio e Recuperação de Vendas.</p>
-                    </div>
-                    <SettingsInput label="OpenAI API Key" value={openaiApiKey} onChange={setOpenaiApiKey} placeholder="sk-proj-xxxxxxxx" type="password" mono hint="Permite responder dúvidas dos clientes em tempo real no rastreio." />
-                  </div>
-
-                  <div className="pt-4 border-t border-slate-800 space-y-4">
-                    <div>
-                      <h3 className="text-sm font-bold text-white">Serviço de E-mail (Resend)</h3>
-                      <p className="text-xs text-slate-400 mt-0.5">Credenciais para envio automatizado de e-mails com códigos de rastreamento.</p>
-                    </div>
-                    <SettingsInput label="Resend API Key" value={resendApiKey} onChange={setResendApiKey} placeholder="re_xxxxxxxxx" type="password" mono hint="Chave de API gerada no painel do Resend." />
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <SettingsInput label="E-mail de Remetente (From)" value={resendFromEmail} onChange={setResendFromEmail} placeholder="Rastreio <noreply@seudominio.com>" hint="Formato: Nome <remetente@dominio.com>" />
-                      <SettingsInput label="URL Pública do App" value={nextPublicAppUrl} onChange={setNextPublicAppUrl} placeholder="https://seudominio.com" hint="Utilizada para gerar os links de rastreio." />
-                    </div>
-                  </div>
-
-                  <div className="pt-4 border-t border-slate-800 space-y-4">
-                    <div>
-                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                        💳 Integração VeoPag (Checkout Pix Próprio)
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-0.5">Configure as credenciais para que o cliente pague a taxa de liberação diretamente na página de rastreio.</p>
-                    </div>
-
-                    <label className="flex items-center gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        checked={veopagEnabled} 
-                        onChange={e => setVeopagEnabled(e.target.checked)} 
-                        className="w-4 h-4 rounded text-indigo-600 bg-slate-900 border-slate-700 focus:ring-indigo-500" 
-                      />
-                      <div>
-                        <span className="text-xs font-bold text-white block">Ativar Checkout Pix Próprio via VeoPag</span>
-                        <span className="text-[10px] text-slate-400 block">Se desativado, o botão de pagamento direciona para o link de checkout externo configurado.</span>
-                      </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input type="checkbox" checked={taxaEnabled} onChange={e => setTaxaEnabled(e.target.checked)} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
                     </label>
-
-                    {veopagEnabled && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                        <SettingsInput 
-                          label="VeoPag Client ID" 
-                          value={veopagClientId} 
-                          onChange={setVeopagClientId} 
-                          placeholder="minhaloja_ABCD1234" 
-                          hint="ID do cliente fornecido pela VeoPag."
-                        />
-                        <SettingsInput 
-                          label="VeoPag Client Secret" 
-                          value={veopagClientSecret} 
-                          onChange={setVeopagClientSecret} 
-                          placeholder="seu_client_secret" 
-                          type="password" 
-                          mono 
-                          hint="Chave secreta de acesso à API."
-                        />
-                      </div>
-                    )}
                   </div>
-
-                  <div className="pt-4 border-t border-slate-800 space-y-4">
-                    <div>
-                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                        <Palette className="w-4 h-4 text-indigo-400" /> Personalização White-Label (Página de Rastreio)
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-0.5">Identidade visual da sua marca apresentada ao cliente em /rastreio/CODIGO.</p>
+                  {taxaEnabled && (
+                    <div className="p-6 space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <SettingsInput label="Dias das 3 Retentativas" value={taxaDiasTentativas} onChange={setTaxaDiasTentativas} placeholder="9,10,11" hint="Dias após a compra para tentativas não atendidas." />
+                        <SettingsInput label="Dia para Exibir Alerta & Botão" value={taxaDiaExibicao} onChange={setTaxaDiaExibicao} type="number" hint="Dia a partir do qual a caixa de pagamento surge (Padrão: 11)." />
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <SettingsInput label="Nome/Título da Taxa" value={taxaNome} onChange={setTaxaNome} placeholder="Taxa de Despacho Postal" />
+                        <SettingsInput label="Valor da Taxa (R$)" value={taxaValor} onChange={setTaxaValor} placeholder="27.90" />
+                      </div>
+                      <SettingsInput label="Link da Página de Pagamento (Checkout Externo)" value={taxaLinkPagamento} onChange={setTaxaLinkPagamento} placeholder="https://checkout.sualoja.com/taxa" hint="URL de redirecionamento quando o checkout VeoPag não está ativo." />
                     </div>
-                    
-                    <SettingsInput label="URL do Logotipo da Loja" value={logoUrl} onChange={setLogoUrl} placeholder="https://minhaloja.com/logo.png" hint="Imagem PNG ou SVG com fundo transparente." />
-                    
+                  )}
+                </div>
+
+                {/* ═══════ CARD 6: VeoPag Checkout Pix ═══════ */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                  <div className="px-6 py-4 bg-gradient-to-r from-emerald-600/10 to-green-600/5 border-b border-slate-800 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">💳</div>
+                      <div>
+                        <h3 className="text-sm font-extrabold text-white">Checkout Pix Integrado (VeoPag)</h3>
+                        <p className="text-[10px] text-slate-400">Cliente paga a taxa direto na página de rastreio via Pix</p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input type="checkbox" checked={veopagEnabled} onChange={e => setVeopagEnabled(e.target.checked)} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                    </label>
+                  </div>
+                  {veopagEnabled && (
+                    <div className="p-6 space-y-4">
+                      <div className="p-3 bg-emerald-500/5 border border-emerald-500/10 rounded-xl text-[11px] text-emerald-300 font-medium">
+                        Quando ativado, o botão &quot;Pagar Taxa&quot; abre o checkout integrado com QR Code Pix diretamente na página de rastreio, ao invés de redirecionar para o link externo.
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <SettingsInput label="VeoPag Client ID" value={veopagClientId} onChange={setVeopagClientId} placeholder="minhaloja_ABCD1234" hint="ID do cliente fornecido pela VeoPag." />
+                        <SettingsInput label="VeoPag Client Secret" value={veopagClientSecret} onChange={setVeopagClientSecret} placeholder="seu_client_secret" type="password" mono hint="Chave secreta de acesso à API." />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* ═══════ CARD 7: Banner de Upsell ═══════ */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                  <div className="px-6 py-4 bg-gradient-to-r from-violet-600/10 to-purple-600/5 border-b border-slate-800 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-xl bg-violet-500/15 text-violet-400 border border-violet-500/20"><ShoppingBag className="w-5 h-5" /></div>
+                      <div>
+                        <h3 className="text-sm font-extrabold text-white">Banner de Upsell & Recompra</h3>
+                        <p className="text-[10px] text-slate-400">Oferta especial com cupom na tela de rastreamento</p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input type="checkbox" checked={upsellEnabled} onChange={e => setUpsellEnabled(e.target.checked)} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
+                    </label>
+                  </div>
+                  {upsellEnabled && (
+                    <div className="p-6 space-y-4">
+                      <SettingsInput label="Título da Oferta" value={upsellTitle} onChange={setUpsellTitle} placeholder="Ganhe 15% OFF na próxima compra!" />
+                      <SettingsInput label="Descrição / Cupom" value={upsellDescription} onChange={setUpsellDescription} placeholder="Use o cupom CLIENTE15 no checkout." />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <SettingsInput label="Link do Botão" value={upsellLink} onChange={setUpsellLink} placeholder="https://minhaloja.com/oferta" />
+                        <SettingsInput label="URL da Imagem (Opcional)" value={upsellImageUrl} onChange={setUpsellImageUrl} placeholder="https://minhaloja.com/produto.jpg" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* ═══════ CARD 8: White-Label ═══════ */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                  <div className="px-6 py-4 bg-gradient-to-r from-fuchsia-600/10 to-pink-600/5 border-b border-slate-800 flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-fuchsia-500/15 text-fuchsia-400 border border-fuchsia-500/20"><Palette className="w-5 h-5" /></div>
+                    <div>
+                      <h3 className="text-sm font-extrabold text-white">Personalização White-Label</h3>
+                      <p className="text-[10px] text-slate-400">Identidade visual da sua marca na página de rastreio</p>
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <SettingsInput label="URL do Logotipo da Loja" value={logoUrl} onChange={setLogoUrl} placeholder="https://minhaloja.com/logo.png" hint="PNG ou SVG com fundo transparente." />
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Cor Tema da Marca</label>
@@ -2696,107 +2667,133 @@ export default function AdminPage() {
                           <input type="text" value={primaryColor} onChange={e => setPrimaryColor(e.target.value)} className="flex-1 px-4 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-white font-mono text-sm uppercase" />
                         </div>
                       </div>
-                      <SettingsInput label="WhatsApp de Suporte ao Cliente" value={whatsappSuporte} onChange={setWhatsappSuporte} placeholder="5511999999999" hint="Número com DDD para o botão de ajuda." />
+                      <SettingsInput label="WhatsApp de Suporte" value={whatsappSuporte} onChange={setWhatsappSuporte} placeholder="5511999999999" hint="Número com DDD para botão de ajuda." />
                     </div>
-
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <SettingsInput label="Banner Promocional / Upsell (URL)" value={bannerUrl} onChange={setBannerUrl} placeholder="https://minhaloja.com/banner-desconto.jpg" hint="Imagem promocional no rodapé do rastreio." />
-                      <SettingsInput label="Link de Destino do Banner" value={bannerLink} onChange={setBannerLink} placeholder="https://minhaloja.com/colecao-nova" hint="Link aberto ao clicar no banner." />
+                      <SettingsInput label="Banner Promocional (URL)" value={bannerUrl} onChange={setBannerUrl} placeholder="https://minhaloja.com/banner.jpg" hint="Imagem no rodapé do rastreio." />
+                      <SettingsInput label="Link de Destino do Banner" value={bannerLink} onChange={setBannerLink} placeholder="https://minhaloja.com/colecao-nova" />
                     </div>
                   </div>
+                </div>
 
-                  <div className="pt-4 border-t border-slate-800 space-y-4">
+                {/* ═══════ CARD 9: E-mail (Resend) ═══════ */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                  <div className="px-6 py-4 bg-gradient-to-r from-blue-600/10 to-indigo-600/5 border-b border-slate-800 flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-blue-500/15 text-blue-400 border border-blue-500/20"><Mail className="w-5 h-5" /></div>
                     <div>
-                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                        <MessageSquare className="w-4 h-4 text-emerald-400" /> WhatsApp Integration (Evolution API)
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-0.5">Disparo automático de mensagens no WhatsApp do cliente.</p>
+                      <h3 className="text-sm font-extrabold text-white">Serviço de E-mail (Resend)</h3>
+                      <p className="text-[10px] text-slate-400">Credenciais para envio automatizado de e-mails</p>
                     </div>
-
-                    <label className="flex items-center gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer">
-                      <input type="checkbox" checked={whatsappEnabled} onChange={e => setWhatsappEnabled(e.target.checked)} className="w-4 h-4 rounded text-indigo-600 bg-slate-900 border-slate-700 focus:ring-indigo-500" />
-                      <div>
-                        <span className="text-xs font-bold text-white block">Ativar Envio de Notificações via WhatsApp</span>
-                        <span className="text-[10px] text-slate-400 block">Envia o código de rastreio e atualizações de entrega direto no WhatsApp do comprador.</span>
-                      </div>
-                    </label>
-
-                    <SettingsInput label="Evolution API URL" value={evolutionApiUrl} onChange={setEvolutionApiUrl} placeholder="https://api.evolution.suaempresa.com" hint="Endereço base do seu servidor Evolution API." />
-                    
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <SettingsInput label="Resend API Key" value={resendApiKey} onChange={setResendApiKey} placeholder="re_xxxxxxxxx" type="password" mono hint="Chave de API do painel Resend." />
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <SettingsInput label="API Key (apikey)" value={evolutionApiKey} onChange={setEvolutionApiKey} placeholder="Chave de API global ou de instância" type="password" mono />
+                      <SettingsInput label="E-mail de Remetente (From)" value={resendFromEmail} onChange={setResendFromEmail} placeholder="Rastreio <noreply@seudominio.com>" hint="Formato: Nome <email@dominio.com>" />
+                      <SettingsInput label="URL Pública do App" value={nextPublicAppUrl} onChange={setNextPublicAppUrl} placeholder="https://seudominio.com" hint="Usada para gerar os links de rastreio." />
+                    </div>
+                  </div>
+                </div>
+
+                {/* ═══════ CARD 10: OpenAI ═══════ */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                  <div className="px-6 py-4 bg-gradient-to-r from-teal-600/10 to-emerald-600/5 border-b border-slate-800 flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-teal-500/15 text-teal-400 border border-teal-500/20"><Sparkles className="w-5 h-5" /></div>
+                    <div>
+                      <h3 className="text-sm font-extrabold text-white">Assistente Virtual de IA (OpenAI)</h3>
+                      <p className="text-[10px] text-slate-400">Chave da OpenAI para o Chatbot do Rastreio</p>
+                    </div>
+                  </div>
+                  <div className="p-6">
+                    <SettingsInput label="OpenAI API Key" value={openaiApiKey} onChange={setOpenaiApiKey} placeholder="sk-proj-xxxxxxxx" type="password" mono hint="Permite responder dúvidas dos clientes em tempo real." />
+                  </div>
+                </div>
+
+                {/* ═══════ CARD 11: WhatsApp (Evolution API) ═══════ */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                  <div className="px-6 py-4 bg-gradient-to-r from-green-600/10 to-lime-600/5 border-b border-slate-800 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-xl bg-green-500/15 text-green-400 border border-green-500/20"><MessageSquare className="w-5 h-5" /></div>
+                      <div>
+                        <h3 className="text-sm font-extrabold text-white">WhatsApp (Evolution API)</h3>
+                        <p className="text-[10px] text-slate-400">Disparo automático de mensagens ao cliente</p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input type="checkbox" checked={whatsappEnabled} onChange={e => setWhatsappEnabled(e.target.checked)} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                    </label>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <SettingsInput label="Evolution API URL" value={evolutionApiUrl} onChange={setEvolutionApiUrl} placeholder="https://api.evolution.suaempresa.com" hint="Endereço base do seu servidor." />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <SettingsInput label="API Key" value={evolutionApiKey} onChange={setEvolutionApiKey} placeholder="Chave de API" type="password" mono />
                       <SettingsInput label="Nome da Instância" value={evolutionInstanceName} onChange={setEvolutionInstanceName} placeholder="instancia-loja-01" hint="Instância conectada ao WhatsApp." />
                     </div>
                   </div>
+                </div>
 
-                  <div className="pt-4 border-t border-slate-800 space-y-4">
-                    <div>
-                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                        <Bot className="w-4 h-4 text-violet-400" /> Agente de IA para Recuperação de Vendas & Suporte
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-0.5">IA inteligente que responde clientes no WhatsApp e converte pedidos pendentes.</p>
-                    </div>
-
-                    <label className="flex items-center gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer">
-                      <input type="checkbox" checked={aiRecoveryEnabled} onChange={e => setAiRecoveryEnabled(e.target.checked)} className="w-4 h-4 rounded text-violet-600 bg-slate-900 border-slate-700 focus:ring-violet-500" />
+                {/* ═══════ CARD 12: Agente de IA (Recuperação) ═══════ */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                  <div className="px-6 py-4 bg-gradient-to-r from-violet-600/10 to-indigo-600/5 border-b border-slate-800 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-xl bg-violet-500/15 text-violet-400 border border-violet-500/20"><Bot className="w-5 h-5" /></div>
                       <div>
-                        <span className="text-xs font-bold text-white block">Ativar Agente de IA Autônomo no WhatsApp</span>
-                        <span className="text-[10px] text-slate-400 block">A IA lê mensagens de clientes com dúvidas e gera respostas empáticas e persuasivas.</span>
+                        <h3 className="text-sm font-extrabold text-white">Agente de IA (Recuperação de Vendas)</h3>
+                        <p className="text-[10px] text-slate-400">IA que responde clientes no WhatsApp e converte pedidos</p>
                       </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input type="checkbox" checked={aiRecoveryEnabled} onChange={e => setAiRecoveryEnabled(e.target.checked)} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
                     </label>
-
-                    <SettingsInput label="Chave de API da OpenAI (opcional por loja)" value={openaiApiKey} onChange={setOpenaiApiKey} placeholder="sk-proj-xxxxxxxxxxxx" type="password" mono hint="Utilizada para acionar o modelo GPT-4o-mini." />
-
+                  </div>
+                  <div className="p-6 space-y-4">
                     <div>
-                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Instruções Personalizadas do Agente de IA (Prompt)</label>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Instruções Personalizadas do Agente (Prompt)</label>
                       <textarea
                         rows={4}
                         value={aiPromptCustom}
                         onChange={e => setAiPromptCustom(e.target.value)}
-                        placeholder="Ex: Trate o cliente pelo primeiro nome, ofereça um cupom de 5% de desconto para fechar o pedido e garanta que a entrega é 100% segura..."
+                        placeholder="Ex: Trate o cliente pelo primeiro nome, ofereça cupom de 5%..."
                         className="w-full px-4 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       />
-                      <span className="text-[10px] text-slate-500 mt-1 block">Regras e diretrizes específicas de atendimento da sua marca.</span>
+                      <span className="text-[10px] text-slate-500 mt-1 block">Regras e diretrizes de atendimento da sua marca.</span>
                     </div>
-                  </div>
-
-                  <button type="submit" disabled={savingSettings}
-                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-50 mt-4 cursor-pointer shadow-lg shadow-indigo-950/50 flex items-center justify-center gap-2">
-                    {savingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                    Salvar Todas as Configurações da Loja
-                  </button>
-                </form>
-              )}
-            </div>
-
-            {/* Zona de Perigo (Danger Zone) */}
-            {!loadingSettings && (
-              <div className="bg-slate-900 border border-red-950/40 rounded-2xl p-6 sm:p-8 shadow-2xl mt-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="p-2 rounded-xl bg-red-500/10 text-red-400">
-                    <AlertTriangle className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-bold text-white">Zona de Perigo</h2>
-                    <p className="text-xs text-slate-400">Ações irreversíveis para esta loja</p>
                   </div>
                 </div>
 
-                <div className="p-4 bg-red-950/10 border border-red-900/20 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-bold text-white">Desconectar e Excluir Loja</p>
-                    <p className="text-[10px] text-slate-400 mt-1 max-w-md">
-                      Isso apagará permanentemente a loja, todos os pedidos, históricos de rastreamento e conversas associadas de forma irreversível.
-                    </p>
-                  </div>
+                {/* ═══════ BOTÃO SALVAR ═══════ */}
+                <button type="submit" disabled={savingSettings}
+                  className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl text-sm font-extrabold text-white transition-all disabled:opacity-50 cursor-pointer shadow-xl shadow-indigo-950/40 flex items-center justify-center gap-2.5">
+                  {savingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  Salvar Todas as Configurações
+                </button>
+              </form>
+            )}
 
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteStore(activeStore.id)}
-                    className="py-2.5 px-4 bg-red-600/10 hover:bg-red-650 border border-red-500/20 hover:border-red-600 rounded-xl text-xs font-bold text-red-400 hover:text-white transition-all shrink-0 cursor-pointer shadow-sm hover:shadow-red-950/50"
-                  >
-                    Excluir Loja Permanentemente
-                  </button>
+            {/* ═══════ Zona de Perigo ═══════ */}
+            {!loadingSettings && (
+              <div className="bg-slate-900 border border-red-950/40 rounded-2xl overflow-hidden shadow-xl">
+                <div className="px-6 py-4 bg-gradient-to-r from-red-600/10 to-rose-600/5 border-b border-red-900/30 flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-red-500/15 text-red-400 border border-red-500/20"><AlertTriangle className="w-5 h-5" /></div>
+                  <div>
+                    <h3 className="text-sm font-extrabold text-white">Zona de Perigo</h3>
+                    <p className="text-[10px] text-slate-400">Ações irreversíveis para esta loja</p>
+                  </div>
+                </div>
+                <div className="p-6">
+                  <div className="p-4 bg-red-950/10 border border-red-900/20 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-bold text-white">Desconectar e Excluir Loja</p>
+                      <p className="text-[10px] text-slate-400 mt-1 max-w-md">
+                        Isso apagará permanentemente a loja, pedidos, históricos e conversas.
+                      </p>
+                    </div>
+                    <button type="button" onClick={() => handleDeleteStore(activeStore.id)}
+                      className="py-2.5 px-4 bg-red-600/10 hover:bg-red-650 border border-red-500/20 hover:border-red-600 rounded-xl text-xs font-bold text-red-400 hover:text-white transition-all shrink-0 cursor-pointer shadow-sm">
+                      Excluir Loja Permanentemente
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -2804,6 +2801,7 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
 
       {/* ----------- TAB: MEMBROS E ACESSOS ----------- */}
       {activeTab === 'members' && activeStore && (
@@ -3519,12 +3517,11 @@ export default function AdminPage() {
                 <select value={manualTrackingStatus} onChange={e => setManualTrackingStatus(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white font-semibold">
                   <option value="pendente_taxa">Pendente de Taxa (Retentativas de entrega falhas)</option>
-                  <option value="postado">Postado</option>
                   <option value="em_transito">Em Trânsito</option>
                   <option value="saiu_para_entrega">Saiu para Entrega</option>
                   <option value="entregue">Entregue</option>
                 </select>
-                <span className="text-[9px] text-slate-500 mt-1 block">O status "Pendente de Taxa" gera automaticamente o histórico de retentativas dos Correios para ativar o checkout.</span>
+                <span className="text-[9px] text-slate-500 mt-1 block">O status &quot;Pendente de Taxa&quot; gera automaticamente o histórico de retentativas dos Correios para ativar o checkout.</span>
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
@@ -3570,4 +3567,5 @@ function SettingsInput({
       {hint && <span className="text-[10px] text-slate-500 mt-1 block">{hint}</span>}
     </div>
   );
+}
 }
