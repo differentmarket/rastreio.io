@@ -158,6 +158,7 @@ export default function AdminPage() {
 }
 
 function AdminPageInner(): any {
+  const [mounted, setMounted] = useState(false);
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [email, setEmail] = useState('');
@@ -336,6 +337,7 @@ function AdminPageInner(): any {
 
   // ── Auth ──
   useEffect(() => {
+    setMounted(true);
     let timer: NodeJS.Timeout;
 
     // Timeout de segurança de 2.5s para evitar travamentos de tela em branco
@@ -1247,8 +1249,8 @@ function AdminPageInner(): any {
     pendentes: emailQueue.filter(o => !o.trackings?.email_enviado).length,
   };
 
-  // ── Loading ──
-  if (authLoading) {
+  // ── Loading & Hydration Guard ──
+  if (!mounted || authLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white" style={{ backgroundColor: '#020617', minHeight: '100vh' }}>
         <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
