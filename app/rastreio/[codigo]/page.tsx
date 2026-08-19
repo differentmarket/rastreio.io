@@ -607,9 +607,9 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
 
                         <button
                           onClick={() => setShowCheckout(false)}
-                          className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-lg transition-colors border border-slate-200 font-sans"
+                          className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-red-650 hover:text-red-700 text-[10px] font-bold rounded-lg transition-colors border border-slate-200 font-sans uppercase tracking-wider"
                         >
-                          Cancelar e Voltar ao Rastreamento
+                          VOU DESISTIR DE MINHA ENCOMENDA E DO PAGAMENTO QUE FIZ
                         </button>
                       </div>
                     </div>
