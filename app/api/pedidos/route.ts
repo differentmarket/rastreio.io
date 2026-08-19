@@ -82,3 +82,155 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: err.message || 'Erro interno do servidor.' }, { status: 500 });
   }
 }
+
+export async function POST(req: NextRequest) {
+  try {
+    const isAdmin = await checkAdminAuth(req);
+    if (!isAdmin) {
+      return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const { 
+      order_id, 
+      numero_pedido, 
+      nome_cliente, 
+      email_cliente, 
+      codigo_rastreio, 
+      status_rastreio, 
+      store_id 
+    } = body;
+
+    if (!codigo_rastreio || !status_rastreio || !store_id) {
+      return NextResponse.json({ error: 'Código de rastreio, status e ID da loja são obrigatórios.' }, { status: 400 });
+    }
+
+    let finalOrderId = order_id;
+
+    // Se não for fornecido um order_id existente, criamos o cliente e o pedido do zero (cadastro manual de teste)
+    if (!finalOrderId) {
+      if (!numero_pedido || !nome_cliente || !email_cliente) {
+        return NextResponse.json({ error: 'Para pedidos novos, número do pedido, nome e e-mail do cliente são obrigatórios.' }, { status: 400 });
+      }
+
+      // 1. Criar ou localizar o cliente
+      let customerId;
+      const { data: existingCustomer } = await supabaseAdmin
+        .from('customers')
+        .select('id')
+        .eq('email', email_cliente.trim())
+        .maybeSingle();
+
+      if (existingCustomer) {
+        customerId = existingCustomer.id;
+      } else {
+        const { data: newCustomer, error: custErr } = await supabaseAdmin
+          .from('customers')
+          .insert({
+            nome: nome_cliente,
+            email: email_cliente,
+          })
+          .select('id')
+          .single();
+        if (custErr) throw custErr;
+        customerId = newCustomer.id;
+      }
+
+      // 2. Criar o pedido
+      const { data: order, error: orderErr } = await supabaseAdmin
+        .from('orders')
+        .insert({
+          numero_pedido: numero_pedido,
+          valor_total: 99.90, // valor fictício
+          customer_id: customerId,
+          store_id,
+          status_pedido: 'pago'
+        })
+        .select('id')
+        .single();
+
+      if (orderErr) throw orderErr;
+      finalOrderId = order.id;
+    }
+
+    // 3. Gerar histórico com base no status do rastreio
+    const now = new Date();
+    const simulatedHistory = [];
+
+    // Se for pendente_taxa, criamos o histórico simulado das 2 tentativas de entrega falhas
+    if (status_rastreio === 'pendente_taxa') {
+      simulatedHistory.push(
+        {
+          status: 'postado',
+          data: new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+          descricao: 'Objeto postado pela loja.',
+          local: 'Central de Logística, São Paulo - SP'
+        },
+        {
+          status: 'em_transito',
+          data: new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+          descricao: 'Objeto em trânsito para Unidade de Tratamento.',
+          local: 'Unidade de Tratamento, Curitiba - PR'
+        },
+        {
+          status: 'saiu_para_entrega',
+          data: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+          descricao: 'Objeto saiu para entrega ao destinatário.',
+          local: 'CDD Centro, Curitiba - PR'
+        },
+        {
+          status: 'tentativa_falha',
+          data: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000 + 4 * 60 * 60 * 1000).toISOString(),
+          descricao: 'Carteiro não atendido. Objeto retornou para a Central (1ª tentativa).',
+          local: 'CDD Centro, Curitiba - PR'
+        },
+        {
+          status: 'saiu_para_entrega',
+          data: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+          descricao: 'Objeto saiu para entrega ao destinatário.',
+          local: 'CDD Centro, Curitiba - PR'
+        },
+        {
+          status: 'tentativa_falha',
+          data: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000 + 4 * 60 * 60 * 1000).toISOString(),
+          descricao: 'Carteiro não atendido. Objeto retornou para a Central (2ª tentativa).',
+          local: 'CDD Centro, Curitiba - PR'
+        }
+      );
+    } else {
+      simulatedHistory.push({
+        status: status_rastreio,
+        data: now.toISOString(),
+        descricao: status_rastreio === 'postado' 
+          ? 'Objeto postado pela loja.' 
+          : status_rastreio === 'em_transito' 
+          ? 'Objeto em trânsito para a Central.' 
+          : status_rastreio === 'saiu_para_entrega' 
+          ? 'Objeto saiu para entrega.' 
+          : 'Objeto entregue ao destinatário.',
+        local: 'Central de Logística, São Paulo - SP'
+      });
+    }
+
+    // 4. Criar o rastreamento
+    const { data: tracking, error: trackErr } = await supabaseAdmin
+      .from('trackings')
+      .insert({
+        codigo_rastreio: codigo_rastreio.toUpperCase().trim(),
+        status: status_rastreio,
+        historico: simulatedHistory,
+        order_id: finalOrderId,
+        store_id,
+        updated_at: now.toISOString()
+      })
+      .select('*')
+      .single();
+
+    if (trackErr) throw trackErr;
+
+    return NextResponse.json({ success: true, tracking });
+  } catch (err: any) {
+    console.error('Erro ao cadastrar/vincular rastreio:', err);
+    return NextResponse.json({ error: err.message || 'Erro interno do servidor.' }, { status: 500 });
+  }
+}

@@ -7,7 +7,7 @@ import {
   MapPin, User, FileText, CheckCircle, RefreshCw, PlusCircle, ArrowLeft, Clock,
   Send, CheckCheck, Mail, AlertTriangle, ShoppingBag, Download, Inbox,
   RotateCcw, Store, Zap, ArrowRight, ExternalLink, CheckCircle2, XCircle, Building2, Users, Globe,
-  BarChart3, Bot, Sparkles, MessageSquare, Palette, Pencil, Trash2, X,
+  BarChart3, Bot, Sparkles, MessageSquare, Palette, Pencil, Trash2, X, Link, Plus,
 } from 'lucide-react';
 
 // ─────────────── Types ───────────────
@@ -106,6 +106,22 @@ export default function AdminPage() {
   const [loginError, setLoginError] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<'pedidos' | 'fila' | 'analytics' | 'ai_agent' | 'settings' | 'members'>('pedidos');
+
+  // Estados de Cadastro Manual de Pedido/Encomenda
+  const [showManualOrderModal, setShowManualOrderModal] = useState(false);
+  const [manualOrderNum, setManualOrderNum] = useState('');
+  const [manualClientName, setManualClientName] = useState('');
+  const [manualClientEmail, setManualClientEmail] = useState('');
+  const [manualTrackingCode, setManualTrackingCode] = useState('');
+  const [manualTrackingStatus, setManualTrackingStatus] = useState('pendente_taxa');
+  const [manualLoading, setManualLoading] = useState(false);
+  const [manualError, setManualError] = useState<string | null>(null);
+
+  // Estados de Vínculo de Rastreio a Pedido Existente
+  const [linkTrackingCode, setLinkTrackingCode] = useState('');
+  const [linkTrackingStatus, setLinkTrackingStatus] = useState('pendente_taxa');
+  const [linkingLoading, setLinkingLoading] = useState(false);
+  const [linkingError, setLinkingError] = useState<string | null>(null);
 
   // White-Label, Evolution API e Agente de IA
   const [logoUrl, setLogoUrl] = useState('');
@@ -648,6 +664,79 @@ export default function AdminPage() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setSession(null);
+  };
+
+  const handleCreateManualOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeStore) return;
+    setManualLoading(true);
+    setManualError(null);
+    try {
+      const res = await fetch('/api/pedidos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          numero_pedido: manualOrderNum,
+          nome_cliente: manualClientName,
+          email_cliente: manualClientEmail,
+          codigo_rastreio: manualTrackingCode,
+          status_rastreio: manualTrackingStatus,
+          store_id: activeStore.id
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao criar encomenda manual.');
+
+      // Atualiza a listagem de pedidos
+      await fetchOrders();
+
+      // Resetar form
+      setManualOrderNum('');
+      setManualClientName('');
+      setManualClientEmail('');
+      setManualTrackingCode('');
+      setManualTrackingStatus('pendente_taxa');
+      setShowManualOrderModal(false);
+      alert('Encomenda manual de teste criada com sucesso!');
+    } catch (err: any) {
+      console.error(err);
+      setManualError(err.message || 'Erro ao criar pedido.');
+    } finally {
+      setManualLoading(false);
+    }
+  };
+
+  const handleLinkTrackingCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedOrder || !activeStore) return;
+    setLinkingLoading(true);
+    setLinkingError(null);
+    try {
+      const res = await fetch('/api/pedidos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          order_id: selectedOrder.id,
+          codigo_rastreio: linkTrackingCode,
+          status_rastreio: linkTrackingStatus,
+          store_id: activeStore.id
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao vincular rastreamento.');
+
+      // Atualizar dados na tela e fechar modal
+      await fetchOrders();
+      await fetchOrderDetail(selectedOrder.id);
+      setLinkTrackingCode('');
+      setLinkTrackingStatus('pendente_taxa');
+      alert('Rastreamento vinculado com sucesso!');
+    } catch (err: any) {
+      console.error(err);
+      setLinkingError(err.message || 'Erro ao vincular.');
+    } finally {
+      setLinkingLoading(false);
+    }
   };
 
   const handleSyncShopify = async () => {
@@ -1596,6 +1685,11 @@ export default function AdminPage() {
               <button onClick={handleSyncShopify} disabled={syncing}
                 className="w-full flex items-center justify-center gap-2 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-60 rounded-xl text-xs font-semibold text-white transition-all shadow-md shadow-indigo-900/30">
                 {syncing ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Sincronizando...</> : <><Download className="w-3.5 h-3.5" /> Sincronizar com Shopify</>}
+              </button>
+
+              <button onClick={() => setShowManualOrderModal(true)}
+                className="w-full mt-2 flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 border border-slate-700/60 rounded-xl text-xs font-semibold text-slate-200 transition-all shadow-md cursor-pointer">
+                <Plus className="w-3.5 h-3.5" /> Criar Encomenda Manual (Teste)
               </button>
 
               {syncResult && (
@@ -3084,7 +3178,7 @@ export default function AdminPage() {
                   </div>
 
                   {/* Rastreio Eventos e Histórico */}
-                  {selectedOrder.trackings && (
+                  {selectedOrder.trackings ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                       {/* Registrar Evento */}
                       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3 shadow-sm">
@@ -3189,6 +3283,50 @@ export default function AdminPage() {
                           ))}
                         </div>
                       </div>
+                    </div>
+                  ) : (
+                    /* Formulário de Vínculo de Rastreio se não houver rastreamento vinculado */
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 shadow-sm max-w-lg">
+                      <div>
+                        <h3 className="text-xs font-bold uppercase tracking-widest text-slate-200 flex items-center gap-1.5">
+                          <Link className="w-4 h-4 text-indigo-400" /> Vincular Código de Rastreamento
+                        </h3>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Este pedido importado do Shopify não tem um rastreamento cadastrado. Cadastre para que a página de rastreio funcione.</p>
+                      </div>
+
+                      {linkingError && (
+                        <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-2 rounded-lg">
+                          {linkingError}
+                        </div>
+                      )}
+
+                      <form onSubmit={handleLinkTrackingCode} className="space-y-3.5 text-xs text-slate-300">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-slate-300">
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Código de Rastreamento</label>
+                            <input type="text" required value={linkTrackingCode} onChange={e => setLinkTrackingCode(e.target.value)}
+                              placeholder="Ex: BR2608B4036C"
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white font-mono uppercase" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Status Inicial</label>
+                            <select value={linkTrackingStatus} onChange={e => setLinkTrackingStatus(e.target.value)}
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white font-semibold">
+                              <option value="pendente_taxa">Pendente de Taxa</option>
+                              <option value="postado">Postado</option>
+                              <option value="em_transito">Em Trânsito</option>
+                              <option value="saiu_para_entrega">Saiu para Entrega</option>
+                              <option value="entregue">Entregue</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <button type="submit" disabled={linkingLoading || !linkTrackingCode}
+                          className="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-bold rounded-lg transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer">
+                          {linkingLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link className="w-3.5 h-3.5" />}
+                          Vincular Código
+                        </button>
+                      </form>
                     </div>
                   )}
 
@@ -3322,6 +3460,83 @@ export default function AdminPage() {
               </>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {/* Modal Cadastro Manual */}
+      {showManualOrderModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
+                <PlusCircle className="w-4 h-4 text-indigo-400" /> Criar Encomenda de Teste (Manual)
+              </h3>
+              <button onClick={() => setShowManualOrderModal(false)} className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {manualError && (
+              <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-2.5 rounded-lg">
+                {manualError}
+              </div>
+            )}
+
+            <form onSubmit={handleCreateManualOrder} className="space-y-3.5 text-xs text-slate-300">
+              <div className="grid grid-cols-2 gap-3 text-slate-300">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Número do Pedido</label>
+                  <input type="text" required value={manualOrderNum} onChange={e => setManualOrderNum(e.target.value)}
+                    placeholder="Ex: 1001-Manual"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Nome do Cliente</label>
+                  <input type="text" required value={manualClientName} onChange={e => setManualClientName(e.target.value)}
+                    placeholder="Nome Completo"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-slate-300">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">E-mail do Cliente</label>
+                  <input type="email" required value={manualClientEmail} onChange={e => setManualClientEmail(e.target.value)}
+                    placeholder="cliente@email.com"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Código de Rastreamento</label>
+                  <input type="text" required value={manualTrackingCode} onChange={e => setManualTrackingCode(e.target.value)}
+                    placeholder="Ex: BR2608B4036C"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white font-mono uppercase" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Status Inicial do Rastreio</label>
+                <select value={manualTrackingStatus} onChange={e => setManualTrackingStatus(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-white font-semibold">
+                  <option value="pendente_taxa">Pendente de Taxa (Retentativas de entrega falhas)</option>
+                  <option value="postado">Postado</option>
+                  <option value="em_transito">Em Trânsito</option>
+                  <option value="saiu_para_entrega">Saiu para Entrega</option>
+                  <option value="entregue">Entregue</option>
+                </select>
+                <span className="text-[9px] text-slate-500 mt-1 block">O status "Pendente de Taxa" gera automaticamente o histórico de retentativas dos Correios para ativar o checkout.</span>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                <button type="button" onClick={() => setShowManualOrderModal(false)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl cursor-pointer">
+                  Cancelar
+                </button>
+                <button type="submit" disabled={manualLoading} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white rounded-xl flex items-center gap-1.5 disabled:opacity-50 cursor-pointer">
+                  {manualLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                  Criar Pedido
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
