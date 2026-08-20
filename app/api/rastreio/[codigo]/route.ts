@@ -219,6 +219,23 @@ export async function GET(
     const timeDiffMs = Date.now() - orderCreatedAt.getTime();
     const daysDiff = timeDiffMs / (1000 * 60 * 60 * 24);
 
+    // Verificar se existe pagamento no histórico para ocultar após 2 dias
+    const eventoPagamento = history.find((h: any) => 
+      h.descricao && h.descricao.toLowerCase().includes('taxa de liberação paga com sucesso')
+    );
+
+    let exibirTaxaFinal = taxaEnabled && daysDiff >= taxaDiaExibicao;
+
+    if (eventoPagamento) {
+      const dataPagamento = new Date(eventoPagamento.data);
+      const tempoDesdePagamentoMs = Date.now() - dataPagamento.getTime();
+      const diasDesdePagamento = tempoDesdePagamentoMs / (1000 * 60 * 60 * 24);
+
+      if (diasDesdePagamento > 2.0) {
+        exibirTaxaFinal = false;
+      }
+    }
+
     // Se o histórico contém apenas a postagem inicial, fazemos a simulação da jornada inteligente
     if (history.length <= 1 && orderCreatedAtStr && status !== 'extraviado') {
       const simulatedHistory = [...history];
@@ -395,7 +412,7 @@ export async function GET(
         itens: orderData?.itens || [],
         store: storeCustomization,
         taxa_info: {
-          exibir: taxaEnabled && daysDiff >= taxaDiaExibicao,
+          exibir: exibirTaxaFinal,
           nome: taxaNome,
           valor: taxaValor,
           link: taxaLink,
@@ -421,7 +438,7 @@ export async function GET(
       itens: orderData?.itens || [],
       store: storeCustomization,
       taxa_info: {
-        exibir: taxaEnabled && daysDiff >= taxaDiaExibicao,
+        exibir: exibirTaxaFinal,
         nome: taxaNome,
         valor: taxaValor,
         link: taxaLink,

@@ -621,57 +621,96 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
             <div className="space-y-6">
 
             {/* ⚠️ ALERTA DESTACADO DA TAXA DE LIBERAÇÃO / RETENTATIVA DE ENTREGA */}
-            {(data.taxa_info?.exibir || data.status === 'pendente_taxa') && (
-              <div className="bg-gradient-to-r from-rose-950/90 via-slate-900 to-amber-950/80 border-2 border-rose-500/60 rounded-2xl p-6 shadow-2xl space-y-4 animate-pulse-slow">
-                <div className="flex items-start gap-4">
-                  <div className="p-3 bg-rose-500/20 border border-rose-500/30 rounded-2xl text-rose-400 shrink-0">
-                    <AlertTriangle className="w-8 h-8" />
-                  </div>
-                  <div className="space-y-1 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="bg-rose-500 text-white text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full tracking-wider">Ação Necessária</span>
-                      <span className="text-xs text-rose-300/80 font-medium">Correios / Alfândega</span>
+            {(data.taxa_info?.exibir || data.status === 'pendente_taxa') && (() => {
+              const isTaxaPaga = data.status !== 'pendente_taxa';
+              return isTaxaPaga ? (
+                <div className="bg-gradient-to-r from-emerald-950/90 via-slate-900 to-teal-950/80 border-2 border-emerald-500/60 rounded-2xl p-6 shadow-2xl space-y-4">
+                  <div className="flex items-start gap-4">
+                    <div className="p-3 bg-emerald-500/20 border border-emerald-500/30 rounded-2xl text-emerald-400 shrink-0">
+                      <CheckCircle2 className="w-8 h-8" />
                     </div>
-                    <h3 className="text-xl font-black text-white leading-snug">
-                      {data.taxa_info?.nome || 'Taxa de Despacho Postal e Liberação Alfandegária'}
-                    </h3>
-                    <p className="text-sm text-slate-300 leading-relaxed">
-                      Seu pacote passou pelas retentativas de entrega e encontra-se <strong>retido</strong> na central. É necessário realizar o pagamento da taxa para liberação imediata e reenvio do objeto ao seu endereço.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-rose-500/20 flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-xl bg-slate-950/60 border border-rose-500/30 text-rose-400">
-                      <CreditCard className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <span className="text-[11px] text-slate-400 uppercase font-semibold">Valor da Taxa</span>
-                      <p className="text-xl font-black text-emerald-400">R$ {data.taxa_info?.valor || '27,90'}</p>
+                    <div className="space-y-1 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="bg-emerald-500 text-slate-950 text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full tracking-wider">Confirmado</span>
+                        <span className="text-xs text-emerald-300/80 font-medium">Correios / Alfândega</span>
+                      </div>
+                      <h3 className="text-xl font-black text-white leading-snug">
+                        Taxa de Liberação Paga com Sucesso
+                      </h3>
+                      <p className="text-sm text-slate-300 leading-relaxed">
+                        O pagamento da taxa de liberação alfandegária foi confirmado. O seu pacote foi <strong>liberado</strong> e está seguindo o fluxo normal de entrega.
+                      </p>
                     </div>
                   </div>
 
-                  {data.taxa_info?.veopag_enabled ? (
-                    <button
-                      onClick={() => setShowCheckout(true)}
-                      className="w-full sm:w-auto px-6 py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-xl text-center text-sm shadow-xl transition-all hover:scale-105 flex items-center justify-center gap-2"
-                    >
-                      💳 Pagar Taxa de Liberação e Reenvio
-                    </button>
-                  ) : (
-                    <a
-                      href={data.taxa_info?.link || '#'}
-                      target={data.taxa_info?.link ? '_blank' : '_self'}
-                      rel="noopener noreferrer"
-                      className="w-full sm:w-auto px-6 py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-xl text-center text-sm shadow-xl transition-all hover:scale-105 flex items-center justify-center gap-2"
-                    >
-                      💳 Pagar Taxa de Liberação e Reenvio
-                    </a>
-                  )}
+                  <div className="pt-3 border-t border-emerald-500/20 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-xl bg-slate-950/60 border border-emerald-500/30 text-emerald-400">
+                        <CreditCard className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <span className="text-[11px] text-slate-400 uppercase font-semibold">Status do Pagamento</span>
+                        <p className="text-sm font-black text-emerald-400">PAGO & LIBERADO</p>
+                      </div>
+                    </div>
+
+                    <div className="w-full sm:w-auto px-6 py-3.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold rounded-xl text-center text-sm shadow-sm transition-all flex items-center justify-center gap-2">
+                      ✅ Pagamento Confirmado e Pedido Liberado
+                    </div>
+                  </div>
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="bg-gradient-to-r from-rose-950/90 via-slate-900 to-amber-950/80 border-2 border-rose-500/60 rounded-2xl p-6 shadow-2xl space-y-4 animate-pulse-slow">
+                  <div className="flex items-start gap-4">
+                    <div className="p-3 bg-rose-500/20 border border-rose-500/30 rounded-2xl text-rose-400 shrink-0">
+                      <AlertTriangle className="w-8 h-8" />
+                    </div>
+                    <div className="space-y-1 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="bg-rose-500 text-white text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full tracking-wider">Ação Necessária</span>
+                        <span className="text-xs text-rose-300/80 font-medium">Correios / Alfândega</span>
+                      </div>
+                      <h3 className="text-xl font-black text-white leading-snug">
+                        {data.taxa_info?.nome || 'Taxa de Despacho Postal e Liberação Alfandegária'}
+                      </h3>
+                      <p className="text-sm text-slate-300 leading-relaxed">
+                        Seu pacote passou pelas retentativas de entrega e encontra-se <strong>retido</strong> na central. É necessário realizar o pagamento da taxa para liberação imediata e reenvio do objeto ao seu endereço.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-rose-500/20 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-xl bg-slate-950/60 border border-rose-500/30 text-rose-400">
+                        <CreditCard className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <span className="text-[11px] text-slate-400 uppercase font-semibold">Valor da Taxa</span>
+                        <p className="text-xl font-black text-emerald-400">R$ {data.taxa_info?.valor || '27,90'}</p>
+                      </div>
+                    </div>
+
+                    {data.taxa_info?.veopag_enabled ? (
+                      <button
+                        onClick={() => setShowCheckout(true)}
+                        className="w-full sm:w-auto px-6 py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-xl text-center text-sm shadow-xl transition-all hover:scale-105 flex items-center justify-center gap-2"
+                      >
+                        💳 Pagar Taxa de Liberação e Reenvio
+                      </button>
+                    ) : (
+                      <a
+                        href={data.taxa_info?.link || '#'}
+                        target={data.taxa_info?.link ? '_blank' : '_self'}
+                        rel="noopener noreferrer"
+                        className="w-full sm:w-auto px-6 py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-xl text-center text-sm shadow-xl transition-all hover:scale-105 flex items-center justify-center gap-2"
+                      >
+                        💳 Pagar Taxa de Liberação e Reenvio
+                      </a>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
             
             {/* Summary card */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
