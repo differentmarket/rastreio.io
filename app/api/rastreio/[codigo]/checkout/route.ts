@@ -167,13 +167,26 @@ export async function POST(
     }
 
     const depositData = await depositRes.json();
-    const qrInfo = depositData.qrCodeResponse;
+    console.log('Resposta completa da VeoPag:', JSON.stringify(depositData));
+
+    // Extrair dados com suporte a múltiplos formatos retornados pela API
+    const qrInfo = depositData.qrCodeResponse || depositData.data?.qrCodeResponse || depositData.data || depositData.pix || depositData.payment || depositData;
+
+    const transactionId = qrInfo?.transactionId || qrInfo?.id || depositData?.transactionId || depositData?.id || `tx-${Date.now()}`;
+    const qrcode = qrInfo?.qrcode || qrInfo?.qrCode || qrInfo?.emv || qrInfo?.payload || depositData?.qrcode || depositData?.qrCode || '';
+    const amount = typeof qrInfo?.amount === 'number' ? qrInfo.amount : valorTotal;
+
+    if (!qrcode) {
+      console.error('Resposta da VeoPag sem QR Code válido:', depositData);
+      const errMsg = depositData.message || depositData.error || depositData.msg || 'Falha ao obter QR Code da adquirente.';
+      return NextResponse.json({ error: errMsg }, { status: 502 });
+    }
 
     return NextResponse.json({
       success: true,
-      transactionId: qrInfo.transactionId,
-      qrcode: qrInfo.qrcode,
-      amount: qrInfo.amount,
+      transactionId,
+      qrcode,
+      amount,
       external_id: `tracking_id:${tracking.id}:total:${valorTotal}`,
     });
   } catch (err: any) {
