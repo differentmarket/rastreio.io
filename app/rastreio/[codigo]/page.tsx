@@ -37,6 +37,7 @@ interface RastreioData {
     valor: string;
     link: string;
     veopag_enabled?: boolean;
+    paga?: boolean;
   };
   upsell_info?: {
     ativo: boolean;
@@ -86,8 +87,8 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
           const res = await fetch(`/api/rastreio/${codigo}`);
           if (res.ok) {
             const jsonData = await res.json();
-            // Se o status mudou no banco de pendente_taxa para outra coisa
-            if (jsonData.status !== 'pendente_taxa') {
+            // Se o backend confirmou que a taxa está paga
+            if (jsonData.taxa_info?.paga) {
               setPixPaid(true);
               setData(jsonData); // atualiza a timeline
             }
@@ -622,7 +623,7 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
 
             {/* ⚠️ ALERTA DESTACADO DA TAXA DE LIBERAÇÃO / RETENTATIVA DE ENTREGA */}
             {(data.taxa_info?.exibir || data.status === 'pendente_taxa') && (() => {
-              const isTaxaPaga = data.status !== 'pendente_taxa';
+              const isTaxaPaga = !!data.taxa_info?.paga;
               return isTaxaPaga ? (
                 <div className="bg-gradient-to-r from-emerald-950/90 via-slate-900 to-teal-950/80 border-2 border-emerald-500/60 rounded-2xl p-6 shadow-2xl space-y-4">
                   <div className="flex items-start gap-4">

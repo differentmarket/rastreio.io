@@ -236,6 +236,8 @@ export async function GET(
       }
     }
 
+    const taxaPaga = !!eventoPagamento;
+
     // Se o histórico contém apenas a postagem inicial, fazemos a simulação da jornada inteligente
     if (history.length <= 1 && orderCreatedAtStr && status !== 'extraviado') {
       const simulatedHistory = [...history];
@@ -413,6 +415,7 @@ export async function GET(
         store: storeCustomization,
         taxa_info: {
           exibir: exibirTaxaFinal,
+          paga: taxaPaga,
           nome: taxaNome,
           valor: taxaValor,
           link: taxaLink,
@@ -439,6 +442,7 @@ export async function GET(
       store: storeCustomization,
       taxa_info: {
         exibir: exibirTaxaFinal,
+        paga: taxaPaga,
         nome: taxaNome,
         valor: taxaValor,
         link: taxaLink,
