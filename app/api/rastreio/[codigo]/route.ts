@@ -3,22 +3,35 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 export const dynamic = 'force-dynamic';
 
-function ajustarParaHorarioComercial(date: Date): Date {
-  const adjusted = new Date(date);
-  // Define uma hora comercial aleatória entre 08:00 e 17:00
-  const randomHour = Math.floor(Math.random() * (17 - 8 + 1)) + 8;
-  const randomMinute = Math.floor(Math.random() * 60);
-  
-  adjusted.setHours(randomHour, randomMinute, 0, 0);
+function gerarDataEvento(
+  baseDate: Date,
+  diasOffset: number,
+  horaBrasilia: number,
+  minutoBrasilia: number,
+  dataAnteriorMinima?: Date
+): Date {
+  const dt = new Date(baseDate);
+  // Adiciona a quantidade de dias
+  dt.setDate(dt.getDate() + Math.floor(diasOffset));
 
-  // Se cair no final de semana (sábado ou domingo), movemos para segunda-feira
-  const dayOfWeek = adjusted.getDay(); // 0 = Domingo, 6 = Sábado
-  if (dayOfWeek === 0) { // Domingo -> segunda
-    adjusted.setDate(adjusted.getDate() + 1);
-  } else if (dayOfWeek === 6) { // Sábado -> segunda
-    adjusted.setDate(adjusted.getDate() + 2);
+  // Ajusta finais de semana para dias úteis (sábado -> segunda, domingo -> segunda)
+  const dayOfWeek = dt.getDay();
+  if (dayOfWeek === 0) { // Domingo -> segunda (+1 dia)
+    dt.setDate(dt.getDate() + 1);
+  } else if (dayOfWeek === 6) { // Sábado -> segunda (+2 dias)
+    dt.setDate(dt.getDate() + 2);
   }
-  return adjusted;
+
+  // Horário de Brasília (UTC-3). No servidor UTC, horaUTC = horaBrasilia + 3
+  const horaUTC = (horaBrasilia + 3) % 24;
+  dt.setUTCHours(horaUTC, minutoBrasilia, 0, 0);
+
+  // Garante estritamente que a nova data seja SEMPRE maior que a data do evento anterior
+  if (dataAnteriorMinima && dt.getTime() <= dataAnteriorMinima.getTime()) {
+    return new Date(dataAnteriorMinima.getTime() + 2.5 * 60 * 60 * 1000);
+  }
+
+  return dt;
 }
 
 function sanitizeHistory(events: any[]) {
@@ -286,19 +299,22 @@ export async function GET(
         });
       }
 
-      // 1.1 Atualização extra no mesmo dia da postagem
-      const postadoExtraDate = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + 0.5 * 24 * 60 * 60 * 1000));
-      if (daysDiff >= 0.5 && postadoExtraDate.getTime() <= Date.now()) {
+      let lastEventDate = new Date(simulatedHistory[simulatedHistory.length - 1].data);
+
+      // 1.1 Atualização extra no mesmo dia da postagem (às 14:20 de Brasília)
+      const postadoExtraDate = gerarDataEvento(orderCreatedAt, 0.4, 14, 20, lastEventDate);
+      if (daysDiff >= 0.4 && postadoExtraDate.getTime() <= Date.now()) {
         simulatedHistory.push({
           status: 'postado',
           data: postadoExtraDate.toISOString(),
           descricao: 'Objeto preparado e etiquetado para envio.',
           local: `Central de Logística, ${cidadeOrigem} - ${estadoOrigem}`
         });
+        lastEventDate = postadoExtraDate;
       }
 
-      // 1.2 Encaminhado para tratamento (1 dia depois da criação)
-      const postadoEncaminhadoDate = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + 1.0 * 24 * 60 * 60 * 1000));
+      // 1.2 Encaminhado para tratamento (dia seguinte às 09:15 de Brasília)
+      const postadoEncaminhadoDate = gerarDataEvento(orderCreatedAt, 1.0, 9, 15, lastEventDate);
       if (daysDiff >= 1.0 && postadoEncaminhadoDate.getTime() <= Date.now()) {
         simulatedHistory.push({
           status: 'postado',
@@ -306,10 +322,11 @@ export async function GET(
           descricao: 'Objeto recebido na unidade de tratamento de origem.',
           local: `Agência dos Correios, ${cidadeOrigem} - ${estadoOrigem}`
         });
+        lastEventDate = postadoEncaminhadoDate;
       }
 
-      // 2. Em Trânsito
-      const transitoDate = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + delayPostado * 24 * 60 * 60 * 1000));
+      // 2. Em Trânsito (às 11:40 de Brasília)
+      const transitoDate = gerarDataEvento(orderCreatedAt, delayPostado, 11, 40, lastEventDate);
       if (daysDiff >= delayPostado && transitoDate.getTime() <= Date.now()) {
         simulatedHistory.push({
           status: 'em_transito',
@@ -318,11 +335,12 @@ export async function GET(
           local: `Unidade de Tratamento, ${localHubOrigem}`
         });
         status = 'em_transito';
+        lastEventDate = transitoDate;
       }
 
-      // 2.1 Em Trânsito - Segunda atualização (chegada no hub destino se for interestadual, ou apenas confirmação no hub local se for do mesmo estado)
-      const transitoChegadaDate = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + (delayPostado + 0.5) * 24 * 60 * 60 * 1000));
-      if (daysDiff >= (delayPostado + 0.5) && transitoChegadaDate.getTime() <= Date.now()) {
+      // 2.1 Em Trânsito - Segunda atualização (chegada no hub destino às 15:10 de Brasília)
+      const transitoChegadaDate = gerarDataEvento(orderCreatedAt, delayPostado + 1.0, 15, 10, lastEventDate);
+      if (daysDiff >= (delayPostado + 1.0) && transitoChegadaDate.getTime() <= Date.now()) {
         const destHub = estadoOrigem === estadoDestino ? localHubOrigem : localHubDestino;
         simulatedHistory.push({
           status: 'em_transito',
@@ -330,21 +348,23 @@ export async function GET(
           descricao: 'Objeto recebido na Unidade de Tratamento de destino.',
           local: `Unidade de Tratamento, ${destHub}`
         });
+        lastEventDate = transitoChegadaDate;
       }
 
-      // 2.2 Encaminhado para a unidade de distribuição local
-      const transitoLocalDate = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + (delayPostado + 1.5) * 24 * 60 * 60 * 1000));
-      if (daysDiff >= (delayPostado + 1.5) && transitoLocalDate.getTime() <= Date.now()) {
+      // 2.2 Encaminhado para a unidade de distribuição local (às 08:45 de Brasília)
+      const transitoLocalDate = gerarDataEvento(orderCreatedAt, delayPostado + 2.0, 8, 45, lastEventDate);
+      if (daysDiff >= (delayPostado + 2.0) && transitoLocalDate.getTime() <= Date.now()) {
         simulatedHistory.push({
           status: 'em_transito',
           data: transitoLocalDate.toISOString(),
           descricao: 'Objeto encaminhado para Unidade de Distribuição',
           local: `CDD Centro, ${cidadeDestino} - ${estadoDestino}`
         });
+        lastEventDate = transitoLocalDate;
       }
 
-      // 3. Saiu para Entrega
-      const saiuDate = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + (delayPostado + delayTransito) * 24 * 60 * 60 * 1000));
+      // 3. Saiu para Entrega (às 10:30 de Brasília)
+      const saiuDate = gerarDataEvento(orderCreatedAt, delayPostado + delayTransito, 10, 30, lastEventDate);
       if (daysDiff >= (delayPostado + delayTransito) && saiuDate.getTime() <= Date.now()) {
         simulatedHistory.push({
           status: 'saiu_para_entrega',
@@ -353,12 +373,13 @@ export async function GET(
           local: `CDD Centro, ${cidadeDestino} - ${estadoDestino}`
         });
         status = 'saiu_para_entrega';
+        lastEventDate = saiuDate;
       }
 
       // 4. Retentativas de Entrega nos dias 9, 10 e 11 se a taxa estiver ativada
       if (taxaEnabled) {
-        // Dia 9: 1ª tentativa
-        const dia9Date = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + 9.0 * 24 * 60 * 60 * 1000));
+        // Dia 9: 1ª tentativa às 16:20
+        const dia9Date = gerarDataEvento(orderCreatedAt, 9.0, 16, 20, lastEventDate);
         if (daysDiff >= 9.0 && dia9Date.getTime() <= Date.now()) {
           simulatedHistory.push({
             status: 'saiu_para_entrega',
@@ -366,10 +387,11 @@ export async function GET(
             descricao: '1ª tentativa de entrega não atendida - Carteiro não atendido.',
             local: `CDD Centro, ${cidadeDestino} - ${estadoDestino}`
           });
+          lastEventDate = dia9Date;
         }
 
-        // Dia 10: 2ª tentativa
-        const dia10Date = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + 10.0 * 24 * 60 * 60 * 1000));
+        // Dia 10: 2ª tentativa às 15:45
+        const dia10Date = gerarDataEvento(orderCreatedAt, 10.0, 15, 45, lastEventDate);
         if (daysDiff >= 10.0 && dia10Date.getTime() <= Date.now()) {
           simulatedHistory.push({
             status: 'saiu_para_entrega',
@@ -377,10 +399,11 @@ export async function GET(
             descricao: '2ª tentativa de entrega não atendida - Destinatário ausente.',
             local: `CDD Centro, ${cidadeDestino} - ${estadoDestino}`
           });
+          lastEventDate = dia10Date;
         }
 
-        // Dia 11: 3ª tentativa & Pendente de Taxa
-        const dia11Date = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + 11.0 * 24 * 60 * 60 * 1000));
+        // Dia 11: 3ª tentativa & Pendente de Taxa às 11:15
+        const dia11Date = gerarDataEvento(orderCreatedAt, 11.0, 11, 15, lastEventDate);
         if (daysDiff >= 11.0 && dia11Date.getTime() <= Date.now()) {
           simulatedHistory.push({
             status: 'pendente_taxa',
@@ -389,10 +412,11 @@ export async function GET(
             local: `Central de Distribuição, ${cidadeDestino} - ${estadoDestino} / Alfândega`
           });
           status = 'pendente_taxa';
+          lastEventDate = dia11Date;
         }
       } else {
-        // Se a taxa não estiver ativada, segue o fluxo normal para Entregue
-        const entregueDate = ajustarParaHorarioComercial(new Date(orderCreatedAt.getTime() + (delayPostado + delayTransito + delaySaiuEntrega) * 24 * 60 * 60 * 1000));
+        // Se a taxa não estiver ativada, segue o fluxo normal para Entregue às 14:50
+        const entregueDate = gerarDataEvento(orderCreatedAt, delayPostado + delayTransito + delaySaiuEntrega, 14, 50, lastEventDate);
         if (daysDiff >= (delayPostado + delayTransito + delaySaiuEntrega) && entregueDate.getTime() <= Date.now()) {
           simulatedHistory.push({
             status: 'entregue',
@@ -401,6 +425,16 @@ export async function GET(
             local: `${cidadeDestino} - ${estadoDestino}`
           });
           status = 'entregue';
+          lastEventDate = entregueDate;
+        }
+      }
+
+      // Validação final de garantia estrita: nenhum evento pode ter timestamp menor ou igual ao evento anterior
+      for (let i = 1; i < simulatedHistory.length; i++) {
+        const prevMs = new Date(simulatedHistory[i - 1].data).getTime();
+        const currMs = new Date(simulatedHistory[i].data).getTime();
+        if (currMs <= prevMs) {
+          simulatedHistory[i].data = new Date(prevMs + 2.5 * 60 * 60 * 1000).toISOString();
         }
       }
 
