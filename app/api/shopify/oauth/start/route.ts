@@ -4,24 +4,30 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  let clientId = (process.env.SHOPIFY_CLIENT_ID || '').replace(/^\uFEFF/, '').trim();
-  let appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+  let clientId = '';
+  let appUrl = '';
 
-  if (!clientId || !appUrl) {
-    try {
-      const { data: settings } = await supabaseAdmin.from('settings').select('key, value');
-      const cfg: Record<string, string> = {};
-      settings?.forEach((s) => { cfg[s.key] = s.value; });
+  try {
+    const { data: settings } = await supabaseAdmin.from('settings').select('key, value');
+    const cfg: Record<string, string> = {};
+    settings?.forEach((s) => { cfg[s.key] = s.value; });
 
-      if (!clientId && cfg['SHOPIFY_CLIENT_ID']) {
-        clientId = cfg['SHOPIFY_CLIENT_ID'].trim();
-      }
-      if (!appUrl && cfg['NEXT_PUBLIC_APP_URL']) {
-        appUrl = cfg['NEXT_PUBLIC_APP_URL'].trim();
-      }
-    } catch (e) {
-      console.error('Erro ao buscar configurações no banco em /api/shopify/oauth/start:', e);
+    if (cfg['SHOPIFY_CLIENT_ID']) {
+      clientId = cfg['SHOPIFY_CLIENT_ID'].trim();
     }
+    if (cfg['NEXT_PUBLIC_APP_URL']) {
+      appUrl = cfg['NEXT_PUBLIC_APP_URL'].trim();
+    }
+  } catch (e) {
+    console.error('Erro ao buscar configurações no banco em /api/shopify/oauth/start:', e);
+  }
+
+  // Fallback para variáveis de ambiente
+  if (!clientId) {
+    clientId = (process.env.SHOPIFY_CLIENT_ID || '').replace(/^\uFEFF/, '').trim();
+  }
+  if (!appUrl) {
+    appUrl = (process.env.NEXT_PUBLIC_APP_URL || '').trim();
   }
 
   if (!appUrl) {
