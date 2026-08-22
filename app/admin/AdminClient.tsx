@@ -226,6 +226,8 @@ export default function AdminClient() {
   const [shopifyDomain, setShopifyDomain] = useState('');
   const [shopifyToken, setShopifyToken] = useState('');
   const [shopifyWebhookSecret, setShopifyWebhookSecret] = useState('');
+  const [shopifyClientId, setShopifyClientId] = useState('');
+  const [shopifyClientSecret, setShopifyClientSecret] = useState('');
   const [delayPostadoEmTransito, setDelayPostadoEmTransito] = useState('2');
   const [delayEmTransitoSaiuEntrega, setDelayEmTransitoSaiuEntrega] = useState('3');
   const [delaySaiuEntregaEntregue, setDelaySaiuEntregaEntregue] = useState('1');
@@ -577,6 +579,8 @@ export default function AdminClient() {
       setShopifyDomain(data.SHOPIFY_STORE_DOMAIN || '');
       setShopifyToken(data.SHOPIFY_ADMIN_TOKEN || '');
       setShopifyWebhookSecret(data.SHOPIFY_WEBHOOK_SECRET || '');
+      setShopifyClientId(data.SHOPIFY_CLIENT_ID || '');
+      setShopifyClientSecret(data.SHOPIFY_CLIENT_SECRET || '');
       setDelayPostadoEmTransito(data.DELAY_POSTADO_EM_TRANSITO || '2');
       setDelayEmTransitoSaiuEntrega(data.DELAY_EM_TRANSITO_SAIU_ENTREGA || '3');
       setDelaySaiuEntregaEntregue(data.DELAY_SAIU_ENTREGA_ENTREGUE || '1');
@@ -664,6 +668,20 @@ export default function AdminClient() {
     if (session && activeTab === 'fila') fetchEmailQueue();
     if (session && activeTab === 'members' && activeStore?.id) fetchStoreMembers(activeStore.id);
   }, [session, activeTab, activeStore?.id]);
+
+  useEffect(() => {
+    if (activeStore) {
+      setEmpresaNome(activeStore.empresa_nome || '');
+      setEmpresaCnpj(activeStore.empresa_cnpj || '');
+      setEmpresaEndereco(activeStore.empresa_endereco || '');
+      setEmpresaCidade(activeStore.empresa_cidade || '');
+      setEmpresaEstado(activeStore.empresa_estado || '');
+      setEmpresaCep(activeStore.empresa_cep || '');
+    } else {
+      // Fallback para configurações globais se nenhuma loja estiver ativa
+      fetchSettings();
+    }
+  }, [activeStore]);
 
   // Polling automático em tempo real (10s) sem recarregar a página
   useEffect(() => {
@@ -1043,6 +1061,17 @@ export default function AdminClient() {
     }
   };
 
+  const handleConnectOAuth = () => {
+    const domainToUse = activeStore?.shopify_domain || shopifyDomain;
+    if (!domainToUse) {
+      alert("Por favor, informe o Domínio da Loja primeiro nas configurações.");
+      return;
+    }
+    const cleanShop = domainToUse.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+    const storeIdParam = activeStore?.id && activeStore.id !== 'default-store' ? `&store_id=${activeStore.id}` : '';
+    window.location.href = `/api/shopify/oauth/start?shop=${cleanShop}${storeIdParam}`;
+  };
+
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingSettings(true);
@@ -1056,6 +1085,8 @@ export default function AdminClient() {
           SHOPIFY_STORE_DOMAIN: shopifyDomain,
           SHOPIFY_ADMIN_TOKEN: shopifyToken,
           SHOPIFY_WEBHOOK_SECRET: shopifyWebhookSecret,
+          SHOPIFY_CLIENT_ID: shopifyClientId,
+          SHOPIFY_CLIENT_SECRET: shopifyClientSecret,
           DELAY_POSTADO_EM_TRANSITO: delayPostadoEmTransito,
           DELAY_EM_TRANSITO_SAIU_ENTREGA: delayEmTransitoSaiuEntrega,
           DELAY_SAIU_ENTREGA_ENTREGUE: delaySaiuEntregaEntregue,
@@ -1110,6 +1141,12 @@ export default function AdminClient() {
             veopag_enabled: veopagEnabled,
             veopag_client_id: veopagClientId,
             veopag_client_secret: veopagClientSecret,
+            empresa_nome: empresaNome,
+            empresa_cnpj: empresaCnpj,
+            empresa_endereco: empresaEndereco,
+            empresa_cidade: empresaCidade,
+            empresa_estado: empresaEstado,
+            empresa_cep: empresaCep,
           }),
         });
         setActiveStore((prev: any) => prev ? ({
@@ -1133,7 +1170,14 @@ export default function AdminClient() {
           veopag_enabled: veopagEnabled,
           veopag_client_id: veopagClientId,
           veopag_client_secret: veopagClientSecret,
+          empresa_nome: empresaNome,
+          empresa_cnpj: empresaCnpj,
+          empresa_endereco: empresaEndereco,
+          empresa_cidade: empresaCidade,
+          empresa_estado: empresaEstado,
+          empresa_cep: empresaCep,
         }) : null);
+        fetchStores();
       }
 
       setSettingsSuccess(true);
@@ -2519,9 +2563,24 @@ export default function AdminClient() {
                     </div>
                   </div>
                   <div className="p-6 space-y-4">
-                    <SettingsInput label="Domínio da Loja" value={shopifyDomain} onChange={setShopifyDomain} placeholder="exemplo.myshopify.com" hint="Insira apenas o subdomínio myshopify.com." />
-                    <SettingsInput label="Token de Acesso Admin API" value={shopifyToken} onChange={setShopifyToken} placeholder="shpat_xxxx" type="password" mono hint="Requer escopos read_orders e write_orders." />
+                    <SettingsInput label="URL Base da Aplicação" value={nextPublicAppUrl} onChange={setNextPublicAppUrl} placeholder="https://rastreio-io.vercel.app" hint="URL onde o sistema está hospedado." />
+                    <SettingsInput label="Shopify App Client ID (API Key)" value={shopifyClientId} onChange={setShopifyClientId} placeholder="Cole o Client ID gerado no Shopify Partners" mono hint="Necessário para a integração via OAuth." />
+                    <SettingsInput label="Shopify App Client Secret" value={shopifyClientSecret} onChange={setShopifyClientSecret} placeholder="Cole o Client Secret gerado no Shopify Partners" type="password" mono hint="Necessário para troca de autorização OAuth." />
+                    <hr className="border-slate-800 my-2" />
+                    <SettingsInput label="Domínio da Loja Principal (Legacy)" value={shopifyDomain} onChange={setShopifyDomain} placeholder="exemplo.myshopify.com" hint="Insira apenas o subdomínio myshopify.com." />
+                    <SettingsInput label="Token de Acesso Admin API (Legacy)" value={shopifyToken} onChange={setShopifyToken} placeholder="shpat_xxxx" type="password" mono hint="Requer escopos read_orders e write_orders." />
                     <SettingsInput label="Segredo do Webhook" value={shopifyWebhookSecret} onChange={setShopifyWebhookSecret} placeholder="Segredo de validação HMAC" type="password" mono />
+                    
+                    <div className="pt-2 flex flex-col gap-2">
+                      <button
+                        type="button"
+                        onClick={handleConnectOAuth}
+                        className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-extrabold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer border border-emerald-500/30"
+                      >
+                        ⚡ Conectar via OAuth (Instalar App Shopify)
+                      </button>
+                      <p className="text-[10px] text-slate-500 text-center">Inicia a instalação automatizada usando as chaves configuradas acima.</p>
+                    </div>
                   </div>
                 </div>
 

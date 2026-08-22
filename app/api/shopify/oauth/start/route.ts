@@ -1,12 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  // Remove BOM (﻿, \uFEFF) e espaços que o PowerShell/env pode adicionar
-  const clientId = (process.env.SHOPIFY_CLIENT_ID || '').replace(/^\uFEFF/, '').trim();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://rastreio-io.vercel.app';
-  const shop = req.nextUrl.searchParams.get('shop') || 'lojazona420.myshopify.com';
+  let clientId = (process.env.SHOPIFY_CLIENT_ID || '').replace(/^\uFEFF/, '').trim();
+  let appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+
+  if (!clientId || !appUrl) {
+    try {
+      const { data: settings } = await supabaseAdmin.from('settings').select('key, value');
+      const cfg: Record<string, string> = {};
+      settings?.forEach((s) => { cfg[s.key] = s.value; });
+
+      if (!clientId && cfg['SHOPIFY_CLIENT_ID']) {
+        clientId = cfg['SHOPIFY_CLIENT_ID'].trim();
+      }
+      if (!appUrl && cfg['NEXT_PUBLIC_APP_URL']) {
+        appUrl = cfg['NEXT_PUBLIC_APP_URL'].trim();
+      }
+    } catch (e) {
+      console.error('Erro ao buscar configurações no banco em /api/shopify/oauth/start:', e);
+    }
+  }
+
+  if (!appUrl) {
+    appUrl = 'https://rastreio-io.vercel.app';
+  }
+
+  const shop = req.nextUrl.searchParams.get('shop') || '';
+  if (!shop) {
+    return NextResponse.json({ error: 'Parâmetro shop é obrigatório.' }, { status: 400 });
+  }
+
+  if (!clientId) {
+    return NextResponse.json({ error: 'SHOPIFY_CLIENT_ID não configurado. Configure no painel Admin em Configurações do Sistema.' }, { status: 400 });
+  }
 
   const scopes = [
     'read_orders',
@@ -21,8 +50,10 @@ export async function GET(req: NextRequest) {
   const storeId = req.nextUrl.searchParams.get('store_id') || '';
   const state = storeId || Math.random().toString(36).substring(2);
 
+  const cleanShop = shop.toLowerCase().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+
   const authUrl =
-    `https://${shop}/admin/oauth/authorize` +
+    `https://${cleanShop}/admin/oauth/authorize` +
     `?client_id=${clientId}` +
     `&scope=${scopes}` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +

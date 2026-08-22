@@ -46,6 +46,8 @@ export async function GET(req: NextRequest) {
       SHOPIFY_STORE_DOMAIN: '',
       SHOPIFY_ADMIN_TOKEN: '',
       SHOPIFY_WEBHOOK_SECRET: '',
+      SHOPIFY_CLIENT_ID: '',
+      SHOPIFY_CLIENT_SECRET: '',
       DELAY_POSTADO_EM_TRANSITO: '2',
       DELAY_EM_TRANSITO_SAIU_ENTREGA: '3',
       DELAY_SAIU_ENTREGA_ENTREGUE: '1',

@@ -13,12 +13,42 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Parâmetros inválidos.' }, { status: 400 });
   }
 
-  // Remove BOM (\uFEFF) que o PowerShell adiciona ao salvar env vars
-  const clientId = (process.env.SHOPIFY_CLIENT_ID || '').replace(/^\uFEFF/, '').trim();
-  const clientSecret = (process.env.SHOPIFY_CLIENT_SECRET || '').replace(/^\uFEFF/, '').trim();
+  let clientId = (process.env.SHOPIFY_CLIENT_ID || '').replace(/^\uFEFF/, '').trim();
+  let clientSecret = (process.env.SHOPIFY_CLIENT_SECRET || '').replace(/^\uFEFF/, '').trim();
+  let appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+
+  if (!clientId || !clientSecret || !appUrl) {
+    try {
+      const { data: settings } = await supabaseAdmin.from('settings').select('key, value');
+      const cfg: Record<string, string> = {};
+      settings?.forEach((s) => { cfg[s.key] = s.value; });
+
+      if (!clientId && cfg['SHOPIFY_CLIENT_ID']) {
+        clientId = cfg['SHOPIFY_CLIENT_ID'].trim();
+      }
+      if (!clientSecret && cfg['SHOPIFY_CLIENT_SECRET']) {
+        clientSecret = cfg['SHOPIFY_CLIENT_SECRET'].trim();
+      }
+      if (!appUrl && cfg['NEXT_PUBLIC_APP_URL']) {
+        appUrl = cfg['NEXT_PUBLIC_APP_URL'].trim();
+      }
+    } catch (e) {
+      console.error('Erro ao buscar configurações no banco em /api/shopify/oauth/callback:', e);
+    }
+  }
+
+  if (!appUrl) {
+    appUrl = 'https://rastreio-io.vercel.app';
+  }
+
+  if (!clientId || !clientSecret) {
+    return NextResponse.json({ error: 'Credenciais SHOPIFY_CLIENT_ID e SHOPIFY_CLIENT_SECRET não configuradas.' }, { status: 400 });
+  }
 
   // Trocar o code pelo access_token permanente
-  const tokenRes = await fetch(`https://${shop}/admin/oauth/access_token`, {
+  const cleanShop = shop.toLowerCase().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+
+  const tokenRes = await fetch(`https://${cleanShop}/admin/oauth/access_token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -37,9 +67,6 @@ export async function GET(req: NextRequest) {
   const { access_token } = await tokenRes.json();
 
   // Salvar domínio e token no banco de dados (SaaS Multi-Tenant se state for UUID, senão Legacy Settings)
-  const cleanShop = shop.toLowerCase().replace(/^https?:\/\//, '').replace(/\/+$/, '');
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://rastreio-io.vercel.app';
-
   if (state && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(state)) {
     const { error: updateErr } = await supabaseAdmin
       .from('stores')
