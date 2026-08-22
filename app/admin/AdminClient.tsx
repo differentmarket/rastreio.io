@@ -1988,7 +1988,7 @@ export default function AdminClient() {
                 </div>
 
                 {/* Botão de atualizar */}
-                <button onClick={fetchEmailQueue} disabled={loadingQueue}
+                <button onClick={() => fetchEmailQueue(false)} disabled={loadingQueue}
                   className="flex items-center justify-center gap-1.5 px-4 py-2 bg-slate-950 hover:bg-slate-800 border border-slate-800 disabled:opacity-50 rounded-xl text-xs text-slate-300 transition-all font-semibold shrink-0 cursor-pointer ml-auto md:ml-0">
                   <RefreshCw className={`w-3.5 h-3.5 ${loadingQueue ? 'animate-spin' : ''}`} />
                   Atualizar
