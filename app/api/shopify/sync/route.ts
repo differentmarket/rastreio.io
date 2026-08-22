@@ -87,6 +87,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
     }
 
+    const { searchParams } = new URL(req.url);
+    const storeIdParam = searchParams.get('store_id') || undefined;
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     const isMock = supabaseUrl.includes('mock-project');
 
@@ -96,9 +99,9 @@ export async function POST(req: NextRequest) {
       shopifyOrders = getMockShopifyOrders();
     } else {
       // Produção: buscar TODOS os pedidos da Shopify com paginação
-      const config = await getShopifyConfig();
+      const config = await getShopifyConfig(storeIdParam);
       if (!config.domain || !config.token) {
-        return NextResponse.json({ error: 'Shopify não configurado. Configure o domínio e token na aba de configurações.' }, { status: 422 });
+        return NextResponse.json({ error: 'Shopify não configurado. Verifique o token e domínio desta loja.' }, { status: 422 });
       }
 
       const cleanDomain = config.domain.replace(/^https?:\/\//, '');
@@ -276,6 +279,7 @@ export async function POST(req: NextRequest) {
               shopify_order_id: shopifyOrderId,
               customer_id: customerId,
               address_id: addressId,
+              store_id: storeIdParam && storeIdParam !== 'default-store' ? storeIdParam : null,
               numero_pedido: orderNumber,
               status_pedido: statusPedido,
               valor_total: totalVal,
@@ -305,6 +309,7 @@ export async function POST(req: NextRequest) {
           const syncAfter = addOneBusinessDay().toISOString();
           const { error: trkErr } = await supabaseAdmin.from('trackings').insert({
             order_id: orderDbId,
+            store_id: storeIdParam && storeIdParam !== 'default-store' ? storeIdParam : null,
             codigo_rastreio: codigo,
             shopify_synced: false,
             shopify_fulfilled: false,

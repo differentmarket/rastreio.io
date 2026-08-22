@@ -572,9 +572,13 @@ export default function AdminClient() {
 
   async function fetchSettings() {
     setLoadingSettings(true);
+    setSettingsError(null);
     try {
       const res = await fetch('/api/settings', { headers: getAuthHeaders() });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Falha ao carregar configurações.');
+      }
       const data = await res.json();
       setShopifyDomain(data.SHOPIFY_STORE_DOMAIN || '');
       setShopifyToken(data.SHOPIFY_ADMIN_TOKEN || '');
@@ -630,7 +634,7 @@ export default function AdminClient() {
         setVeopagClientSecret(activeStore.veopag_client_secret || '');
       }
     } catch (err: any) {
-      setSettingsError(err.message || 'Erro ao carregar.');
+      setSettingsError(err.message || 'Erro ao carregar configurações.');
     } finally {
       setLoadingSettings(false);
     }
@@ -806,7 +810,9 @@ export default function AdminClient() {
     setSyncing(true);
     setSyncResult(null);
     try {
-      const res = await fetch('/api/shopify/sync', {
+      const targetStoreId = activeStore?.id || selectedStoreId;
+      const queryParam = targetStoreId && targetStoreId !== 'all' ? `?store_id=${targetStoreId}` : '';
+      const res = await fetch(`/api/shopify/sync${queryParam}`, {
         method: 'POST',
         headers: getAuthHeaders(),
       });
@@ -821,7 +827,7 @@ export default function AdminClient() {
           return [...newOrders, ...prev];
         });
       } else {
-        await fetchOrders();
+        await fetchOrders(targetStoreId);
       }
 
       setSyncResult({ count: data.sincronizados });
