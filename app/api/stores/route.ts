@@ -320,13 +320,38 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'ID da loja não informado.' }, { status: 400 });
     }
 
-    const { error } = await supabaseAdmin.from('stores').delete().eq('id', storeId);
-    if (error) {
-      console.warn('Aviso ao excluir loja:', error.message);
+    // 1. Limpar vínculos de usuários da loja
+    await supabaseAdmin.from('store_users').delete().eq('store_id', storeId);
+
+    // 2. Limpar conversas de IA associadas
+    await supabaseAdmin.from('ai_conversations').delete().eq('store_id', storeId);
+
+    // 3. Buscar pedidos da loja para remover trackings e fila de emails
+    const { data: storeOrders } = await supabaseAdmin
+      .from('orders')
+      .select('id')
+      .eq('store_id', storeId);
+
+    if (storeOrders && storeOrders.length > 0) {
+      const orderIds = storeOrders.map(o => o.id);
+      await supabaseAdmin.from('email_queue').delete().in('order_id', orderIds);
+      await supabaseAdmin.from('trackings').delete().in('order_id', orderIds);
+      await supabaseAdmin.from('orders').delete().in('id', orderIds);
     }
 
-    return NextResponse.json({ success: true, message: 'Loja desconectada com sucesso.' });
+    // 4. Limpar trackings remanescentes da loja (se houver)
+    await supabaseAdmin.from('trackings').delete().eq('store_id', storeId);
+
+    // 5. Excluir a loja
+    const { error } = await supabaseAdmin.from('stores').delete().eq('id', storeId);
+    if (error) {
+      console.error('Erro ao excluir loja:', error);
+      return NextResponse.json({ error: error.message || 'Erro ao excluir loja no banco.' }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, message: 'Loja desconectada e excluída com sucesso.' });
   } catch (err: any) {
+    console.error('Erro geral ao excluir loja:', err);
     return NextResponse.json({ error: err.message || 'Erro ao desconectar loja.' }, { status: 500 });
   }
 }

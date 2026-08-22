@@ -448,18 +448,24 @@ export default function AdminClient() {
   };
 
   const handleDeleteStore = async (storeId: string) => {
-    if (!confirm('Deseja realmente desconectar esta loja?')) return;
+    if (!confirm('Deseja realmente desconectar e excluir esta loja? Todos os pedidos e históricos vinculados a ela serão removidos.')) return;
     try {
       const res = await fetch(`/api/stores?id=${storeId}`, { method: 'DELETE', headers: getAuthHeaders() });
-      if (res.ok) {
-        fetchStores();
-        if (activeStore?.id === storeId) {
-          setActiveStore(null);
-          setSelectedStoreId('all');
-          fetchOrders('all');
-        }
+      const data = await res.json();
+      if (!res.ok) {
+        alert(`Erro ao excluir loja: ${data.error || 'Falha na requisição'}`);
+        return;
       }
-    } catch { /* silent */ }
+      alert('Loja excluída com sucesso!');
+      await fetchStores();
+      if (activeStore?.id === storeId) {
+        setActiveStore(null);
+        setSelectedStoreId('all');
+        fetchOrders('all');
+      }
+    } catch (err: any) {
+      alert(`Erro ao excluir loja: ${err.message}`);
+    }
   };
 
   const handleSelectStore = (store: any) => {
@@ -1414,12 +1420,25 @@ export default function AdminClient() {
                           <p className="text-sm font-extrabold text-white mt-0.5">{s.total_pedidos || 0}</p>
                         </div>
 
-                        <button
-                          onClick={() => handleSelectStore(s)}
-                          className="py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-950/50 transition-all flex items-center gap-1.5 group-hover:bg-indigo-500 cursor-pointer"
-                        >
-                          🚀 Acessar Painel
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteStore(s.id);
+                            }}
+                            title="Desconectar e Excluir Loja"
+                            className="p-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 border border-red-500/20 rounded-xl transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleSelectStore(s)}
+                            className="py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-950/50 transition-all flex items-center gap-1.5 group-hover:bg-indigo-500 cursor-pointer"
+                          >
+                            🚀 Acessar Painel
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
