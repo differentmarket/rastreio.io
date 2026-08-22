@@ -102,55 +102,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ stores: fallbackStores, totalStores: 1 });
     }
 
-    // Se a tabela stores existir mas estiver vazia, auto-migra a loja cadastrada nas settings legadas
+    // Retorna as lojas cadastradas
     let finalStores = stores || [];
-    if (finalStores.length === 0) {
-      const { data: settings } = await supabaseAdmin.from('settings').select('key, value');
-      const cfg: Record<string, string> = {};
-      settings?.forEach(s => { cfg[s.key] = s.value; });
-
-      const defaultDomain = cfg['SHOPIFY_STORE_DOMAIN'];
-      const defaultToken  = cfg['SHOPIFY_ADMIN_TOKEN'];
-      const empresaNome   = cfg['EMPRESA_NOME'] || 'Loja Principal';
-
-      if (defaultDomain) {
-        // Insere a loja legada na tabela stores
-        const { data: autoCreatedStore } = await supabaseAdmin
-          .from('stores')
-          .insert({
-            nome_loja: empresaNome,
-            shopify_domain: defaultDomain.toLowerCase().replace(/^https?:\/\//, '').replace(/\/+$/, ''),
-            shopify_access_token: defaultToken || null,
-            shopify_webhook_secret: cfg['SHOPIFY_WEBHOOK_SECRET'] || null,
-            status: 'ativa',
-            empresa_nome: empresaNome,
-            empresa_cnpj: cfg['EMPRESA_CNPJ'] || null,
-            empresa_endereco: cfg['EMPRESA_ENDERECO'] || null,
-            empresa_cidade: cfg['EMPRESA_CIDADE'] || null,
-            empresa_estado: cfg['EMPRESA_ESTADO'] || null,
-            empresa_cep: cfg['EMPRESA_CEP'] || null,
-          })
-          .select()
-          .single();
-
-        if (autoCreatedStore) {
-          finalStores = [autoCreatedStore];
-          // Associa os pedidos e rastreios existentes sem store_id a esta loja
-          await supabaseAdmin.from('orders').update({ store_id: autoCreatedStore.id }).is('store_id', null);
-          await supabaseAdmin.from('trackings').update({ store_id: autoCreatedStore.id }).is('store_id', null);
-          
-          // Associa o usuário atual como proprietário da loja auto-criada no store_users
-          if (userId) {
-            await supabaseAdmin.from('store_users').upsert({
-              user_id: userId,
-              user_email: userEmail,
-              store_id: autoCreatedStore.id,
-              role: 'owner',
-            }, { onConflict: 'user_id,store_id' });
-          }
-        }
-      }
-    }
 
     // Para cada loja, enriquecer com métricas de pedidos
     const enrichedStores = await Promise.all(finalStores.map(async (store: any) => {
@@ -318,6 +271,11 @@ export async function DELETE(req: NextRequest) {
 
     if (!storeId) {
       return NextResponse.json({ error: 'ID da loja não informado.' }, { status: 400 });
+    }
+
+    if (storeId === 'default-store') {
+      await supabaseAdmin.from('settings').update({ value: '' }).in('key', ['SHOPIFY_STORE_DOMAIN', 'SHOPIFY_ADMIN_TOKEN', 'SHOPIFY_WEBHOOK_SECRET']);
+      return NextResponse.json({ success: true, message: 'Loja padrão desconectada com sucesso.' });
     }
 
     // 1. Limpar vínculos de usuários da loja
