@@ -149,9 +149,10 @@ function detectarTransportadora(shippingMethodTitle: string | null, codigoRastre
 export async function enviarRastreioShopify(
   shopifyOrderId: number,
   codigoRastreio: string,
-  shippingMethod?: string | null
+  shippingMethod?: string | null,
+  storeId?: string
 ): Promise<boolean> {
-  const config = await getShopifyConfig();
+  const config = await getShopifyConfig(storeId);
 
   if (!config.domain || !config.token || config.domain.includes('mock-store')) {
     console.log(`[Shopify Mock] Sincronizado código ${codigoRastreio} para o pedido Shopify ${shopifyOrderId}`);

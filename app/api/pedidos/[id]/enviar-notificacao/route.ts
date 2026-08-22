@@ -25,6 +25,7 @@ export async function POST(
       .from('orders')
       .select(`
         id,
+        store_id,
         shopify_order_id,
         numero_pedido,
         status_pedido,
@@ -74,6 +75,13 @@ export async function POST(
       return NextResponse.json({ error: 'Cliente não possui e-mail cadastrado.' }, { status: 400 });
     }
 
+    // Buscar loja associada ao pedido (Multi-Tenant)
+    let storeInfo: any = null;
+    if (order.store_id) {
+      const { data: storeData } = await supabaseAdmin.from('stores').select('*').eq('id', order.store_id).maybeSingle();
+      storeInfo = storeData;
+    }
+
     // Carregar configurações do banco de dados
     const { data: settings } = await supabaseAdmin.from('settings').select('key, value');
     const cfg: Record<string, string> = {};
@@ -90,7 +98,7 @@ export async function POST(
       rawAppUrl = 'https://rastreio-io.vercel.app';
     }
     const appUrl = rawAppUrl;
-    const empresaNome = cfg['EMPRESA_NOME'] || 'Nossa Loja';
+    const empresaNome = storeInfo?.empresa_nome || storeInfo?.nome_loja || cfg['EMPRESA_NOME'] || 'Nossa Loja';
 
     let statusRastreio = { sucesso: false, erro: '' };
     let statusNota = { sucesso: false, erro: '' };
@@ -103,7 +111,7 @@ export async function POST(
       }
       // Permite re-envio contínuo nas notificações manuais do admin
       const trackingUrl = `${appUrl}/rastreio/${tracking.codigo_rastreio}`;
-      const htmlRastreio = buildRastreioHtml({ order, cust: customer, trk: tracking, trackingUrl, empresaNome });
+      const htmlRastreio = buildRastreioHtml({ order, cust: customer, trk: tracking, trackingUrl, empresaNome, storeInfo });
 
       if (resendApiKey) {
         const r = await fetch('https://api.resend.com/emails', {
@@ -129,7 +137,7 @@ export async function POST(
           const rawPayload = (order as any).raw_payload || {};
           const shippingLines = rawPayload.shipping_lines || [];
           const shippingMethod = shippingLines[0]?.title || null;
-          shopifyFulfilled = await enviarRastreioShopify(Number(order.shopify_order_id), tracking.codigo_rastreio, shippingMethod);
+          shopifyFulfilled = await enviarRastreioShopify(Number(order.shopify_order_id), tracking.codigo_rastreio, shippingMethod, order.store_id);
         } catch (shopifyErr: any) {
           console.error('Erro ao sincronizar fulfillment com a Shopify:', shopifyErr);
         }
@@ -147,7 +155,7 @@ export async function POST(
 
     // Função interna para enviar e-mail de nota de compra
     const enviarEmailNota = async () => {
-      const htmlNota = buildNotaHtml({ order, cust: customer, addr: address, cfg });
+      const htmlNota = buildNotaHtml({ order, cust: customer, addr: address, cfg, storeInfo });
 
       if (resendApiKey) {
         const r = await fetch('https://api.resend.com/emails', {
@@ -246,13 +254,14 @@ export async function POST(
 }
 
 // ── Templates HTML ─────────────────────────────────────────────────
-function buildNotaHtml({ order, cust, addr, cfg }: any) {
-  const empresaNome = cfg['EMPRESA_NOME'] || 'Nossa Loja';
-  const empresaCnpj = cfg['EMPRESA_CNPJ'] || '00.000.000/0001-00';
-  const empresaEndereco = cfg['EMPRESA_ENDERECO'] || 'Rua Principal, 100';
-  const empresaCidade = cfg['EMPRESA_CIDADE'] || 'São Paulo';
-  const empresaEstado = cfg['EMPRESA_ESTADO'] || 'SP';
-  const empresaCep = cfg['EMPRESA_CEP'] || '01000-000';
+function buildNotaHtml({ order, cust, addr, cfg, storeInfo }: any) {
+  const empresaNome = storeInfo?.empresa_nome || storeInfo?.nome_loja || cfg['EMPRESA_NOME'] || 'Nossa Loja';
+  const empresaCnpj = storeInfo?.empresa_cnpj || cfg['EMPRESA_CNPJ'] || '00.000.000/0001-00';
+  const empresaEndereco = storeInfo?.empresa_endereco || cfg['EMPRESA_ENDERECO'] || 'Rua Principal, 100';
+  const empresaCidade = storeInfo?.empresa_cidade || cfg['EMPRESA_CIDADE'] || 'São Paulo';
+  const empresaEstado = storeInfo?.empresa_estado || cfg['EMPRESA_ESTADO'] || 'SP';
+  const empresaCep = storeInfo?.empresa_cep || cfg['EMPRESA_CEP'] || '01000-000';
+  const logoUrl = storeInfo?.logo_url || null;
 
   const dataPedido = order.created_at 
     ? new Date(order.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })

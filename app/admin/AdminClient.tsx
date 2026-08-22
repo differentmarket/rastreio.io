@@ -627,6 +627,12 @@ export default function AdminClient() {
       setUpsellImageUrl(data.UPSELL_IMAGE_URL || '');
 
       if (activeStore) {
+        setEmpresaNome(activeStore.empresa_nome || '');
+        setEmpresaCnpj(activeStore.empresa_cnpj || '');
+        setEmpresaEndereco(activeStore.empresa_endereco || '');
+        setEmpresaCidade(activeStore.empresa_cidade || '');
+        setEmpresaEstado(activeStore.empresa_estado || '');
+        setEmpresaCep(activeStore.empresa_cep || '');
         setLogoUrl(activeStore.logo_url || '');
         setPrimaryColor(activeStore.primary_color || '#4F46E5');
         setBannerUrl(activeStore.banner_url || '');

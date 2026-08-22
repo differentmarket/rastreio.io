@@ -44,6 +44,10 @@ export async function POST(req: NextRequest) {
     const cfg: Record<string, string> = {};
     settings?.forEach(s => { cfg[s.key] = s.value; });
 
+    // Carregar todas as lojas para isolamento de dados fiscais (Multi-Tenant)
+    const { data: storesList } = await supabaseAdmin.from('stores').select('*');
+    const storesMap = new Map<string, any>((storesList || []).map(s => [s.id, s]));
+
     const resendApiKey = cfg['RESEND_API_KEY'] || '';
     let fromEmail = cfg['RESEND_FROM_EMAIL'] || 'Rastreio <onboarding@resend.dev>';
     if (fromEmail.includes('seudominio.com')) {
@@ -59,14 +63,20 @@ export async function POST(req: NextRequest) {
     const notaDelayHoras = parseFloat(cfg['NOTA_DELAY_HORAS'] || '2');
     const rastreioProximoDiaUtil = cfg['RASTREIO_PROXIMO_DIA_UTIL'] !== 'false'; // padrão: true
 
+    const storeIdParam = body.store_id || null;
+
     // ── Buscar pedidos (Apenas pedidos PAGOS são elegíveis para e-mails) ──
     let query = supabaseAdmin.from('orders').select(`
-      id, shopify_order_id, numero_pedido, status_pedido, valor_total,
+      id, store_id, shopify_order_id, numero_pedido, status_pedido, valor_total,
       itens, raw_payload, created_at,
       customers ( nome, email ),
       addresses ( logradouro, numero, complemento, bairro, cidade, estado, cep ),
       trackings ( id, codigo_rastreio, status, email_enviado, shopify_synced )
     `).eq('status_pedido', 'pago');
+
+    if (storeIdParam && storeIdParam !== 'all' && storeIdParam !== 'default-store') {
+      query = query.eq('store_id', storeIdParam);
+    }
 
     const now = new Date();
     if (orderId) {
@@ -174,10 +184,13 @@ export async function POST(req: NextRequest) {
       const shippingMethod = order.raw_payload?.shipping_lines?.[0]?.title || null;
 
       try {
+        const storeInfo: any = order.store_id ? storesMap.get(order.store_id) : null;
+        const lojaNomeEspecifico = storeInfo?.empresa_nome || storeInfo?.nome_loja || empresaNome;
+
         // ── Envio de Rastreio ───────────────────────────────────
         if ((tipo === 'rastreio' || tipo === 'ambos') && podeEnviarRastreio && trk?.codigo_rastreio) {
           const trackingUrl = `${appUrl}/rastreio/${trk.codigo_rastreio}`;
-          const htmlRastreio = buildRastreioHtml({ order, cust, trk, trackingUrl, empresaNome });
+          const htmlRastreio = buildRastreioHtml({ order, cust, trk, trackingUrl, empresaNome: lojaNomeEspecifico, storeInfo });
 
           if (resendApiKey) {
             await fetch('https://api.resend.com/emails', {
@@ -192,13 +205,14 @@ export async function POST(req: NextRequest) {
             });
           }
 
-          // Fulfilment na Shopify com carrier detectado
+          // Fulfilment na Shopify com carrier detectado e storeId
           let shopifyFulfilled = false;
           if (order.shopify_order_id) {
             shopifyFulfilled = await enviarRastreioShopify(
               Number(order.shopify_order_id),
               trk.codigo_rastreio,
-              shippingMethod
+              shippingMethod,
+              order.store_id
             );
           }
 
@@ -213,7 +227,7 @@ export async function POST(req: NextRequest) {
 
         // ── Envio de Nota de Compra ─────────────────────────────
         if ((tipo === 'nota' || tipo === 'ambos') && podeEnviarNota) {
-          const htmlNota = buildNotaHtml({ order, cust, addr, cfg });
+          const htmlNota = buildNotaHtml({ order, cust, addr, cfg, storeInfo });
 
           if (resendApiKey) {
             await fetch('https://api.resend.com/emails', {
@@ -264,13 +278,14 @@ export async function POST(req: NextRequest) {
 }
 
 // ── Templates HTML ─────────────────────────────────────────────────
-function buildNotaHtml({ order, cust, addr, cfg }: any) {
-  const empresaNome = cfg['EMPRESA_NOME'] || 'Nossa Loja';
-  const empresaCnpj = cfg['EMPRESA_CNPJ'] || '00.000.000/0001-00';
-  const empresaEndereco = cfg['EMPRESA_ENDERECO'] || 'Rua Principal, 100';
-  const empresaCidade = cfg['EMPRESA_CIDADE'] || 'São Paulo';
-  const empresaEstado = cfg['EMPRESA_ESTADO'] || 'SP';
-  const empresaCep = cfg['EMPRESA_CEP'] || '01000-000';
+function buildNotaHtml({ order, cust, addr, cfg, storeInfo }: any) {
+  const empresaNome = storeInfo?.empresa_nome || storeInfo?.nome_loja || cfg['EMPRESA_NOME'] || 'Nossa Loja';
+  const empresaCnpj = storeInfo?.empresa_cnpj || cfg['EMPRESA_CNPJ'] || '00.000.000/0001-00';
+  const empresaEndereco = storeInfo?.empresa_endereco || cfg['EMPRESA_ENDERECO'] || 'Rua Principal, 100';
+  const empresaCidade = storeInfo?.empresa_cidade || cfg['EMPRESA_CIDADE'] || 'São Paulo';
+  const empresaEstado = storeInfo?.empresa_estado || cfg['EMPRESA_ESTADO'] || 'SP';
+  const empresaCep = storeInfo?.empresa_cep || cfg['EMPRESA_CEP'] || '01000-000';
+  const logoUrl = storeInfo?.logo_url || null;
 
   const dataPedido = order.created_at 
     ? new Date(order.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })

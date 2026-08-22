@@ -23,6 +23,10 @@ export async function GET(req: NextRequest) {
     const cfg: Record<string, string> = {};
     settings?.forEach(s => { cfg[s.key] = s.value; });
 
+    // 2. Carregar mapa de todas as lojas para isolamento de dados fiscais (Multi-Tenant)
+    const { data: storesList } = await supabaseAdmin.from('stores').select('*');
+    const storesMap = new Map<string, any>((storesList || []).map(s => [s.id, s]));
+
     const resendApiKey = cfg['RESEND_API_KEY'] || process.env.RESEND_API_KEY || '';
     let fromEmail = cfg['RESEND_FROM_EMAIL'] || process.env.RESEND_FROM_EMAIL || 'Rastreio <onboarding@resend.dev>';
     if (fromEmail.includes('seudominio.com')) {
@@ -46,6 +50,7 @@ export async function GET(req: NextRequest) {
       .from('orders')
       .select(`
         id,
+        store_id,
         numero_pedido,
         valor_total,
         itens,
@@ -76,10 +81,11 @@ export async function GET(req: NextRequest) {
         if (prazoNotaPassou && !notaEnviada) {
           const customer: any = Array.isArray(order.customers) ? order.customers[0] : order.customers;
           const address: any = Array.isArray(order.addresses) ? order.addresses[0] : order.addresses;
+          const storeInfo: any = order.store_id ? storesMap.get(order.store_id) : null;
 
           if (customer?.email) {
             try {
-              const htmlNota = buildNotaHtml({ order, cust: customer, addr: address, cfg });
+              const htmlNota = buildNotaHtml({ order, cust: customer, addr: address, cfg, storeInfo });
 
               if (resendApiKey) {
                 const r = await fetch('https://api.resend.com/emails', {
@@ -135,6 +141,7 @@ export async function GET(req: NextRequest) {
         sync_after,
         orders (
           id,
+          store_id,
           shopify_order_id,
           numero_pedido,
           created_at,
@@ -168,8 +175,10 @@ export async function GET(req: NextRequest) {
         // 1. Enviar e-mail de rastreio ao cliente se ainda não foi enviado
         if (!tracking.email_enviado && customer?.email && orderObj) {
           try {
+            const storeInfo: any = orderObj.store_id ? storesMap.get(orderObj.store_id) : null;
+            const lojaNomeEspecifico = storeInfo?.empresa_nome || storeInfo?.nome_loja || empresaNome;
             const trackingUrl = `${appUrl}/rastreio/${tracking.codigo_rastreio}`;
-            const htmlRastreio = buildRastreioHtml({ order: orderObj, cust: customer, trk: tracking, trackingUrl, empresaNome });
+            const htmlRastreio = buildRastreioHtml({ order: orderObj, cust: customer, trk: tracking, trackingUrl, empresaNome: lojaNomeEspecifico, storeInfo });
 
             if (resendApiKey) {
               const r = await fetch('https://api.resend.com/emails', {
@@ -204,7 +213,7 @@ export async function GET(req: NextRequest) {
             const rawPayload = orderObj?.raw_payload || {};
             const shippingLines = rawPayload.shipping_lines || [];
             const shippingMethod = shippingLines[0]?.title || null;
-            shopifySucesso = await enviarRastreioShopify(Number(shopifyOrderId), tracking.codigo_rastreio, shippingMethod);
+            shopifySucesso = await enviarRastreioShopify(Number(shopifyOrderId), tracking.codigo_rastreio, shippingMethod, orderObj.store_id);
           } catch (shopifyErr: any) {
             console.error(`Erro ao sincronizar fulfillment na Shopify para rastreio ${tracking.codigo_rastreio}:`, shopifyErr);
           }
@@ -340,13 +349,14 @@ export async function GET(req: NextRequest) {
 
 // ── Templates HTML Auxiliares ──────────────────────────────────────────────
 
-function buildNotaHtml({ order, cust, addr, cfg }: any) {
-  const empresaNome = cfg['EMPRESA_NOME'] || 'Nossa Loja';
-  const empresaCnpj = cfg['EMPRESA_CNPJ'] || '00.000.000/0001-00';
-  const empresaEndereco = cfg['EMPRESA_ENDERECO'] || 'Rua Principal, 100';
-  const empresaCidade = cfg['EMPRESA_CIDADE'] || 'São Paulo';
-  const empresaEstado = cfg['EMPRESA_ESTADO'] || 'SP';
-  const empresaCep = cfg['EMPRESA_CEP'] || '01000-000';
+function buildNotaHtml({ order, cust, addr, cfg, storeInfo }: any) {
+  const empresaNome = storeInfo?.empresa_nome || storeInfo?.nome_loja || cfg['EMPRESA_NOME'] || 'Nossa Loja';
+  const empresaCnpj = storeInfo?.empresa_cnpj || cfg['EMPRESA_CNPJ'] || '00.000.000/0001-00';
+  const empresaEndereco = storeInfo?.empresa_endereco || cfg['EMPRESA_ENDERECO'] || 'Rua Principal, 100';
+  const empresaCidade = storeInfo?.empresa_cidade || cfg['EMPRESA_CIDADE'] || 'São Paulo';
+  const empresaEstado = storeInfo?.empresa_estado || cfg['EMPRESA_ESTADO'] || 'SP';
+  const empresaCep = storeInfo?.empresa_cep || cfg['EMPRESA_CEP'] || '01000-000';
+  const logoUrl = storeInfo?.logo_url || null;
 
   const dataPedido = order.created_at
     ? new Date(order.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })

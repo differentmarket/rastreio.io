@@ -19,7 +19,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { data: order, error } = await supabaseAdmin
       .from('orders')
       .select(`
-        id, numero_pedido, valor_total, itens, raw_payload, created_at, shopify_order_id,
+        id, store_id, numero_pedido, valor_total, itens, raw_payload, created_at, shopify_order_id,
         customers ( nome, email ),
         addresses ( logradouro, numero, complemento, bairro, cidade, estado, cep ),
         trackings ( id, codigo_rastreio, status, email_enviado )
@@ -39,6 +39,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'Cliente sem e-mail cadastrado.' }, { status: 400 });
     }
 
+    // Buscar loja associada ao pedido (Multi-Tenant)
+    let storeInfo: any = null;
+    if (order.store_id) {
+      const { data: storeData } = await supabaseAdmin.from('stores').select('*').eq('id', order.store_id).maybeSingle();
+      storeInfo = storeData;
+    }
+
     const { data: settings } = await supabaseAdmin.from('settings').select('key, value');
     const cfg: Record<string, string> = {};
     settings?.forEach(s => { cfg[s.key] = s.value; });
@@ -54,14 +61,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       rawAppUrl = 'https://rastreio-io.vercel.app';
     }
     const appUrl      = rawAppUrl;
-    const empresaNome = cfg['EMPRESA_NOME'] || 'Nossa Loja';
+    const empresaNome = storeInfo?.empresa_nome || storeInfo?.nome_loja || cfg['EMPRESA_NOME'] || 'Nossa Loja';
     const toEmail     = emailDestino || cust?.email;
 
     const results: { tipo: string; sucesso: boolean; erro?: string }[] = [];
 
     // ── Nota de Compra ──────────────────────────────────────────
     if (tipo === 'nota' || tipo === 'ambos') {
-      const htmlNota = buildNotaHtml({ order, cust, addr, cfg });
+      const htmlNota = buildNotaHtml({ order, cust, addr, cfg, storeInfo });
 
       if (!resendApiKey || resendApiKey === 'mock-resend-key') {
         console.log(`[TESTE NOTA MOCK] Para: ${toEmail}, Pedido: #${order.numero_pedido}`);
@@ -134,13 +141,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 // ── Templates ──────────────────────────────────────────────────────
-function buildNotaHtml({ order, cust, addr, cfg }: any) {
-  const empresaNome = cfg['EMPRESA_NOME'] || 'Nossa Loja';
-  const empresaCnpj = cfg['EMPRESA_CNPJ'] || '00.000.000/0001-00';
-  const empresaEndereco = cfg['EMPRESA_ENDERECO'] || 'Rua Principal, 100';
-  const empresaCidade = cfg['EMPRESA_CIDADE'] || 'São Paulo';
-  const empresaEstado = cfg['EMPRESA_ESTADO'] || 'SP';
-  const empresaCep = cfg['EMPRESA_CEP'] || '01000-000';
+function buildNotaHtml({ order, cust, addr, cfg, storeInfo }: any) {
+  const empresaNome = storeInfo?.empresa_nome || storeInfo?.nome_loja || cfg['EMPRESA_NOME'] || 'Nossa Loja';
+  const empresaCnpj = storeInfo?.empresa_cnpj || cfg['EMPRESA_CNPJ'] || '00.000.000/0001-00';
+  const empresaEndereco = storeInfo?.empresa_endereco || cfg['EMPRESA_ENDERECO'] || 'Rua Principal, 100';
+  const empresaCidade = storeInfo?.empresa_cidade || cfg['EMPRESA_CIDADE'] || 'São Paulo';
+  const empresaEstado = storeInfo?.empresa_estado || cfg['EMPRESA_ESTADO'] || 'SP';
+  const empresaCep = storeInfo?.empresa_cep || cfg['EMPRESA_CEP'] || '01000-000';
+  const logoUrl = storeInfo?.logo_url || null;
 
   const dataPedido = order.created_at 
     ? new Date(order.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
