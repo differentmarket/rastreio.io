@@ -556,8 +556,8 @@ export default function AdminClient() {
     }
   };
 
-  const fetchEmailQueue = async () => {
-    setLoadingQueue(true);
+  const fetchEmailQueue = async (isSilent = false) => {
+    if (!isSilent) setLoadingQueue(true);
     try {
       const url = activeStore?.id 
         ? `/api/fila-emails?store_id=${activeStore.id}`
@@ -566,7 +566,7 @@ export default function AdminClient() {
       if (!res.ok) throw new Error();
       setEmailQueue(await res.json());
     } catch { /* silent */ } finally {
-      setLoadingQueue(false);
+      if (!isSilent) setLoadingQueue(false);
     }
   };
 
@@ -693,7 +693,7 @@ export default function AdminClient() {
           fetchOrderDetail(selectedOrder.id, true);
         }
       } else if (activeTab === 'fila') {
-        fetchEmailQueue();
+        fetchEmailQueue(true);
       }
     }, 10000);
 
