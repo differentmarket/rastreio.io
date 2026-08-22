@@ -278,6 +278,10 @@ export default function AdminClient() {
   const [settingsSuccess, setSettingsSuccess] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
 
+  // Modal Customizado para Confirmação de Exclusão de Loja
+  const [storeToDelete, setStoreToDelete] = useState<any | null>(null);
+  const [deletingStoreId, setDeletingStoreId] = useState<string | null>(null);
+
   // ── Auth ──
   useEffect(() => {
     setMounted(true);
@@ -447,24 +451,28 @@ export default function AdminClient() {
     }
   };
 
-  const handleDeleteStore = async (storeId: string) => {
-    if (!confirm('Deseja realmente desconectar e excluir esta loja? Todos os pedidos e históricos vinculados a ela serão removidos.')) return;
+  const handleConfirmDeleteStore = async () => {
+    if (!storeToDelete) return;
+    const targetId = storeToDelete.id;
+    setDeletingStoreId(targetId);
     try {
-      const res = await fetch(`/api/stores?id=${storeId}`, { method: 'DELETE', headers: getAuthHeaders() });
+      const res = await fetch(`/api/stores?id=${targetId}`, { method: 'DELETE', headers: getAuthHeaders() });
       const data = await res.json();
       if (!res.ok) {
         alert(`Erro ao excluir loja: ${data.error || 'Falha na requisição'}`);
         return;
       }
-      alert('Loja excluída com sucesso!');
+      setStoreToDelete(null);
       await fetchStores();
-      if (activeStore?.id === storeId) {
+      if (activeStore?.id === targetId) {
         setActiveStore(null);
         setSelectedStoreId('all');
         fetchOrders('all');
       }
     } catch (err: any) {
       alert(`Erro ao excluir loja: ${err.message}`);
+    } finally {
+      setDeletingStoreId(null);
     }
   };
 
@@ -1425,7 +1433,7 @@ export default function AdminClient() {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleDeleteStore(s.id);
+                              setStoreToDelete(s);
                             }}
                             title="Desconectar e Excluir Loja"
                             className="p-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 border border-red-500/20 rounded-xl transition-colors cursor-pointer"
@@ -1675,6 +1683,59 @@ export default function AdminClient() {
                     </div>
                   </form>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Modal de Confirmação de Exclusão de Loja */}
+          {storeToDelete && (
+            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-red-900/30 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+                <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
+                  <div className="w-10 h-10 rounded-xl bg-red-500/15 border border-red-500/20 flex items-center justify-center text-red-400">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-white">Desconectar e Excluir Loja</h3>
+                    <p className="text-xs text-slate-400">Ação irreversível</p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Tem certeza que deseja excluir permanentemente a loja <strong className="text-white">{storeToDelete.nome_loja}</strong> (<span className="font-mono text-indigo-300">{storeToDelete.shopify_domain}</span>)?
+                </p>
+                <div className="p-3 bg-red-950/20 border border-red-900/30 rounded-xl text-[11px] text-red-300">
+                  ⚠️ Todos os pedidos, históricos de rastreio e dados associados a esta loja serão removidos do sistema.
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    disabled={deletingStoreId !== null}
+                    onClick={() => setStoreToDelete(null)}
+                    className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deletingStoreId !== null}
+                    onClick={handleConfirmDeleteStore}
+                    className="px-5 py-2.5 bg-red-600 hover:bg-red-500 text-xs font-bold text-white rounded-xl flex items-center gap-2 shadow-lg shadow-red-950/50 disabled:opacity-50 transition-all cursor-pointer"
+                  >
+                    {deletingStoreId ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Excluindo...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Sim, Excluir Loja
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -2896,7 +2957,7 @@ export default function AdminClient() {
                         Isso apagará permanentemente a loja, pedidos, históricos e conversas.
                       </p>
                     </div>
-                    <button type="button" onClick={() => activeStore?.id && handleDeleteStore(activeStore.id)}
+                    <button type="button" onClick={() => activeStore && setStoreToDelete(activeStore)}
                       className="py-2.5 px-4 bg-red-600/10 hover:bg-red-650 border border-red-500/20 hover:border-red-600 rounded-xl text-xs font-bold text-red-400 hover:text-white transition-all shrink-0 cursor-pointer shadow-sm">
                       Excluir Loja Permanentemente
                     </button>
