@@ -1143,7 +1143,7 @@ export default function AdminClient() {
       if (!res.ok) throw new Error('Erro ao salvar.');
 
       if (activeStore) {
-        await fetch('/api/stores', {
+        const storeRes = await fetch('/api/stores', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({
@@ -1175,6 +1175,11 @@ export default function AdminClient() {
             empresa_cep: empresaCep,
           }),
         });
+
+        const storeData = await storeRes.json();
+        if (!storeRes.ok) {
+          throw new Error(storeData.error || 'Erro ao atualizar dados específicos da loja.');
+        }
         setActiveStore((prev: any) => prev ? ({
           ...prev,
           logo_url: logoUrl,
