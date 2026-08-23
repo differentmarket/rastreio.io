@@ -258,7 +258,8 @@ export default function AdminClient() {
   // Upsell & Recompra
   const [upsellEnabled, setUpsellEnabled] = useState(false);
   const [upsellTitle, setUpsellTitle] = useState('Ganhe 15% OFF na sua próxima compra!');
-  const [upsellDescription, setUpsellDescription] = useState('Use o cupom CLIENTE15 no checkout e aproveite frete grátis.');
+  const [upsellDescription, setUpsellDescription] = useState('Aproveite nossa condição exclusiva de frete grátis e desconto para clientes.');
+  const [upsellCoupon, setUpsellCoupon] = useState('CLIENTE15');
   const [upsellLink, setUpsellLink] = useState('');
   const [upsellImageUrl, setUpsellImageUrl] = useState('');
 
@@ -622,7 +623,8 @@ export default function AdminClient() {
 
       setUpsellEnabled(data.UPSELL_ENABLED === 'true');
       setUpsellTitle(data.UPSELL_TITLE || 'Ganhe 15% OFF na sua próxima compra!');
-      setUpsellDescription(data.UPSELL_DESCRIPTION || 'Use o cupom CLIENTE15 no checkout e aproveite frete grátis.');
+      setUpsellDescription(data.UPSELL_DESCRIPTION || 'Aproveite nossa condição exclusiva de frete grátis e desconto para clientes.');
+      setUpsellCoupon(data.UPSELL_COUPON || 'CLIENTE15');
       setUpsellLink(data.UPSELL_LINK || '');
       setUpsellImageUrl(data.UPSELL_IMAGE_URL || '');
 
@@ -1135,6 +1137,7 @@ export default function AdminClient() {
           UPSELL_ENABLED: String(upsellEnabled),
           UPSELL_TITLE: upsellTitle,
           UPSELL_DESCRIPTION: upsellDescription,
+          UPSELL_COUPON: upsellCoupon,
           UPSELL_LINK: upsellLink,
           UPSELL_IMAGE_URL: upsellImageUrl,
           OPENAI_API_KEY: openaiApiKey,
@@ -2817,11 +2820,14 @@ export default function AdminClient() {
                   </div>
                   {upsellEnabled && (
                     <div className="p-6 space-y-4">
-                      <SettingsInput label="Título da Oferta" value={upsellTitle} onChange={setUpsellTitle} placeholder="Ganhe 15% OFF na próxima compra!" />
-                      <SettingsInput label="Descrição / Cupom" value={upsellDescription} onChange={setUpsellDescription} placeholder="Use o cupom CLIENTE15 no checkout." />
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <SettingsInput label="Link do Botão" value={upsellLink} onChange={setUpsellLink} placeholder="https://minhaloja.com/oferta" />
-                        <SettingsInput label="URL da Imagem (Opcional)" value={upsellImageUrl} onChange={setUpsellImageUrl} placeholder="https://minhaloja.com/produto.jpg" />
+                        <SettingsInput label="Título da Oferta" value={upsellTitle} onChange={setUpsellTitle} placeholder="Ganhe 15% OFF na próxima compra!" />
+                        <SettingsInput label="Cupom de Desconto (Lead / Recompra)" value={upsellCoupon} onChange={setUpsellCoupon} placeholder="CLIENTE15" hint="Código do cupom que o cliente copia com 1 clique." mono />
+                      </div>
+                      <SettingsInput label="Descrição da Oferta" value={upsellDescription} onChange={setUpsellDescription} placeholder="Aproveite nossa condição exclusiva de frete grátis e desconto para clientes." />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <SettingsInput label="Link da Loja / Produto (Botão)" value={upsellLink} onChange={setUpsellLink} placeholder="https://minhaloja.com/oferta" />
+                        <SettingsInput label="URL da Imagem / Banner (Opcional)" value={upsellImageUrl} onChange={setUpsellImageUrl} placeholder="https://minhaloja.com/produto.jpg" />
                       </div>
                     </div>
                   )}

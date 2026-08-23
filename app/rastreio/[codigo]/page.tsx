@@ -43,6 +43,7 @@ interface RastreioData {
     ativo: boolean;
     titulo: string;
     descricao: string;
+    cupom?: string;
     link: string;
     imagem_url?: string;
   };
@@ -942,6 +943,26 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
                     </div>
                     <h4 className="text-base font-extrabold text-white">{data.upsell_info.titulo}</h4>
                     <p className="text-xs text-slate-300 leading-relaxed">{data.upsell_info.descricao}</p>
+
+                    {data.upsell_info.cupom && (
+                      <div className="pt-2 flex items-center gap-2">
+                        <span className="text-[11px] text-slate-400 font-semibold">Cupom do Pedido:</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (data.upsell_info?.cupom) {
+                              navigator.clipboard.writeText(data.upsell_info.cupom);
+                              alert(`Cupom "${data.upsell_info.cupom}" copiado com sucesso!`);
+                            }
+                          }}
+                          title="Clique para copiar cupom"
+                          className="px-2.5 py-1 bg-violet-950/80 hover:bg-violet-900 border border-violet-500/40 text-violet-200 font-mono font-extrabold text-xs rounded-lg flex items-center gap-1.5 transition-all cursor-pointer group shadow-sm"
+                        >
+                          <span>🎟️ {data.upsell_info.cupom}</span>
+                          <span className="text-[10px] text-violet-400 group-hover:text-white underline">Copiar</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 

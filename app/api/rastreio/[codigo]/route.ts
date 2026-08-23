@@ -220,7 +220,8 @@ export async function GET(
 
     const upsellEnabled = cfg['UPSELL_ENABLED'] === 'true';
     const upsellTitle = cfg['UPSELL_TITLE'] || 'Ganhe 15% OFF na sua próxima compra!';
-    const upsellDescription = cfg['UPSELL_DESCRIPTION'] || 'Use o cupom CLIENTE15 no checkout e aproveite frete grátis.';
+    const upsellDescription = cfg['UPSELL_DESCRIPTION'] || 'Use o cupom no checkout e aproveite frete grátis.';
+    const upsellCoupon = cfg['UPSELL_COUPON'] || 'CLIENTE15';
     const upsellLink = cfg['UPSELL_LINK'] || '';
     const upsellImageUrl = cfg['UPSELL_IMAGE_URL'] || '';
 
@@ -459,6 +460,7 @@ export async function GET(
           ativo: upsellEnabled,
           titulo: upsellTitle,
           descricao: upsellDescription,
+          cupom: upsellCoupon,
           link: upsellLink,
           imagem_url: upsellImageUrl,
         },
