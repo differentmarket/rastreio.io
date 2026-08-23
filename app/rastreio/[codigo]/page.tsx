@@ -73,10 +73,26 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
   const [payerName, setPayerName] = useState('');
   const [payerEmail, setPayerEmail] = useState('');
   const [payerCpf, setPayerCpf] = useState('');
-  const [bradescoBump, setBradescoBump] = useState(false);
+  const [bradescoBump, setBradescoBump] = useState(true);
   const [expressBump, setExpressBump] = useState(false);
   const [pixData, setPixData] = useState<{ qrcode: string; transactionId: string; amount: number; external_id?: string; isMock?: boolean } | null>(null);
   const [pixPaid, setPixPaid] = useState(false);
+
+  // Contador Regressivo de Escassez (15 minutos = 900 segundos)
+  const [timeLeft, setTimeLeft] = useState(895);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeLeft(prev => (prev > 0 ? prev - 1 : 895));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatTimer = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
 
   // Polling para monitoramento de confirmação do Pix
   useEffect(() => {
@@ -904,21 +920,28 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
               )}
             </div>
 
-            {/* 🛍️ BANNER DE UPSELL / OFERTA DE RECOMPRA */}
+            {/* 🛍️ BANNER DE UPSELL / OFERTA DE RECOMPRA COM CONTADOR REGRESSIVO */}
             {data.upsell_info?.ativo && (
-              <div className="bg-gradient-to-r from-violet-950/80 via-slate-900 to-indigo-950/80 border border-violet-500/30 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="relative overflow-hidden bg-gradient-to-r from-violet-950/90 via-slate-900 to-indigo-950/90 border border-violet-500/30 rounded-2xl p-6 shadow-2xl flex flex-col md:flex-row items-center justify-between gap-6">
                 <div className="flex items-center gap-4">
                   {data.upsell_info.imagem_url ? (
                     <img src={data.upsell_info.imagem_url} alt="Produto em Oferta" className="w-16 h-16 rounded-xl object-cover border border-violet-500/30 shrink-0" />
                   ) : (
-                    <div className="p-3.5 rounded-2xl bg-violet-500/20 text-violet-400 border border-violet-500/30 shrink-0">
+                    <div className="p-3.5 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-lg shrink-0">
                       <ShoppingBag className="w-8 h-8" />
                     </div>
                   )}
                   <div className="space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-violet-400 tracking-wider">Oferta Exclusiva de Recompra</span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] uppercase font-black text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full tracking-wider flex items-center gap-1">
+                        ⚡ Oferta Exclusiva de Recompra
+                      </span>
+                      <span className="text-[10px] font-mono font-bold text-violet-300 flex items-center gap-1 bg-violet-950/60 px-2 py-0.5 rounded-full border border-violet-800/50">
+                        ⏳ Expira em: <span className="text-amber-300 font-extrabold">{formatTimer(timeLeft)}</span>
+                      </span>
+                    </div>
                     <h4 className="text-base font-extrabold text-white">{data.upsell_info.titulo}</h4>
-                    <p className="text-xs text-slate-300">{data.upsell_info.descricao}</p>
+                    <p className="text-xs text-slate-300 leading-relaxed">{data.upsell_info.descricao}</p>
                   </div>
                 </div>
 
@@ -927,9 +950,10 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
                     href={data.upsell_info.link}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full md:w-auto px-6 py-3 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-xl text-center text-xs shadow-lg transition-all hover:scale-105 shrink-0"
+                    className="w-full md:w-auto px-6 py-3.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-extrabold rounded-xl text-center text-xs shadow-xl shadow-indigo-950/50 transition-all hover:scale-105 shrink-0 flex items-center justify-center gap-2"
                   >
-                    Aproveitar Oferta 🛒
+                    <span>Aproveitar Desconto Exclusivo</span>
+                    <span>🛒</span>
                   </a>
                 )}
               </div>
