@@ -273,6 +273,15 @@ npx vercel deploy --prod --force
 - **Relacionamentos**: Adicionada a coluna `store_id` nas tabelas `orders` e `trackings`.
 - **UI & Gestão Super-Admin**: Adicionada a aba **"Lojas SaaS"** e o menu **Seletor de Loja (Store Switcher)** no topo do painel admin em `app/admin/page.tsx`, com modal **Conectar Nova Loja Shopify** e APIs `/api/stores`.
 
+### 8.12 Isolamento de Taxas e Order Bumps por Loja (Multi-Tenant)
+- **Descoberta:** As taxas e order bumps (Bradesco Seguros e Frete Express) eram compartilhados globalmente ou hardcoded. Isso vazava configurações de ofertas e valores de uma loja para outra.
+- **Decisão:** Adicionamos colunas específicas de controle de taxas e bumps na tabela `stores`. Adaptamos o Admin para salvar esses campos por loja, e as APIs de consulta e checkout para carregá-los dinamicamente por rastreio, garantindo isolamento total. Mapeamos os order bumps para iniciar com Frete Express marcado e Bradesco desmarcado por padrão no checkout.
+
+### 8.13 Sincronização de Pedidos Pendentes e Recuperação de Vendas via WhatsApp
+- **Solicitação:** A sincronização manual da Shopify buscava apenas pedidos pagos, impossibilitando a gestão de recuperação de vendas de pedidos pendentes que não passavam pelo webhook.
+- **Decisão:** Alteramos a rota de sincronização `/api/shopify/sync` para puxar status `paid,pending` da Shopify. Implementamos a criação síncrona de conversas de recuperação de vendas na tabela `ai_recovery_conversations` para novos pedidos pendentes vindos da sincronização, além de atualizar o status do agendamento caso um pedido pendente existente seja pago.
+
 ---
 
 > **Dica para Economia de Tokens com IAs**: Ao iniciar uma nova instrução com um assistente de IA, mencione apenas: *"Consulte o arquivo `ARCHITECTURE.md` para entender a estrutura e convenções antes de editar."*
+

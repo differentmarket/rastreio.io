@@ -78,8 +78,8 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
   const [payerName, setPayerName] = useState('');
   const [payerEmail, setPayerEmail] = useState('');
   const [payerCpf, setPayerCpf] = useState('');
-  const [bradescoBump, setBradescoBump] = useState(true);
-  const [expressBump, setExpressBump] = useState(false);
+  const [bradescoBump, setBradescoBump] = useState(false);
+  const [expressBump, setExpressBump] = useState(true);
   const [pixData, setPixData] = useState<{ qrcode: string; transactionId: string; amount: number; external_id?: string; isMock?: boolean } | null>(null);
   const [pixPaid, setPixPaid] = useState(false);
 
@@ -210,8 +210,8 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
         setPayerCpf(jsonData.customer.cpf || '');
       }
       if (jsonData.store) {
-        setBradescoBump(jsonData.store.order_bump_bradesco_enabled !== false);
-        setExpressBump(jsonData.store.order_bump_express_enabled === true);
+        setBradescoBump(false);
+        setExpressBump(jsonData.store.order_bump_express_enabled !== false);
       }
       
       // Mensagem inicial padrão da IA
