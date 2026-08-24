@@ -32,6 +32,7 @@
    - **White-Label:** `logo_url`, `primary_color` (default '#4F46E5'), `banner_url`, `banner_link`, `whatsapp_suporte`
    - **Evolution API (WhatsApp):** `evolution_api_url`, `evolution_api_key`, `evolution_instance_name`, `whatsapp_enabled`
    - **Agente de IA LLM:** `ai_recovery_enabled`, `openai_api_key`, `ai_prompt_custom`, `ai_model` (gpt-4o-mini, gpt-4o, gemini-1.5-flash), `ai_tone` (amigavel, vendedor, formal, empatico), `ai_temperature` (numeric 0.1 a 1.0), `ai_coupon_code`
+   - **Upsell / Recompra:** `upsell_enabled` (boolean), `upsell_title` TEXT, `upsell_description` TEXT, `upsell_coupon` TEXT, `upsell_link` TEXT, `upsell_image_url` TEXT
 
 2. **`store_users` (Acessos e Membros por Loja)**:
    - `id` (UUID PK), `store_id` (FK stores), `user_email` TEXT, `role` TEXT DEFAULT 'lojista'
@@ -47,6 +48,9 @@
 
 6. **`settings` (Configurações Legadas & Auto-Migrador)**:
    - Tabela de par chave-valor. O sistema possui auto-migração em `GET /api/stores` que converte configurações legadas de `settings` em uma nova loja na tabela `stores` automaticamente.
+
+7. **Regras Críticas de Isolamento Multi-Tenant**:
+   - **Isolamento de Ofertas, Taxas e Upsell:** É obrigatório que recursos visuais de checkout/rastreamento e marketing (Taxas, Order Bumps, WhatsApp, Recuperação de Vendas e Banners de Upsell) sejam completamente isolados por loja na tabela `stores`. Nenhuma loja pode carregar ou visualizar ofertas de outra. A tabela global `settings` deve ser lida apenas como fallback para compatibilidade retroativa.
 
 ---
 

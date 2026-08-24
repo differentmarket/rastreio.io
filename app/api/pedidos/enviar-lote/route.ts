@@ -111,9 +111,30 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const { data: orders, error } = await query;
-    if (error || !orders) {
+    const { data: initialOrders, error } = await query;
+    if (error) {
       return NextResponse.json({ error: 'Erro ao buscar pedidos.' }, { status: 500 });
+    }
+
+    let orders = initialOrders || [];
+
+    // Fallback: Se o filtro por data exata (ex: 'ontem' ou 'exceto_hoje') não encontrou pedidos, busca todos os pedidos pagos
+    if (orders.length === 0 && (periodo === 'ontem' || periodo === 'exceto_hoje' || periodo === 'pendentes')) {
+      let fallbackQuery = supabaseAdmin.from('orders').select(`
+        id, store_id, shopify_order_id, numero_pedido, status_pedido, valor_total,
+        itens, raw_payload, created_at,
+        customers ( nome, email ),
+        addresses ( logradouro, numero, complemento, bairro, cidade, estado, cep ),
+        trackings ( id, codigo_rastreio, status, email_enviado, shopify_synced )
+      `).eq('status_pedido', 'pago');
+
+      if (storeIdParam && storeIdParam !== 'all' && storeIdParam !== 'default-store') {
+        fallbackQuery = fallbackQuery.eq('store_id', storeIdParam);
+      }
+      const { data: fallbackOrders } = await fallbackQuery;
+      if (fallbackOrders && fallbackOrders.length > 0) {
+        orders = fallbackOrders;
+      }
     }
 
     // ── Filtrar elegíveis com base nas regras de negócio ──────────
@@ -122,8 +143,9 @@ export async function POST(req: NextRequest) {
     const targetOrders = orders.filter((o: any) => {
       const cust = Array.isArray(o.customers) ? o.customers[0] : o.customers;
       const trk  = Array.isArray(o.trackings) ? o.trackings[0] : o.trackings;
+      const email = cust?.email || o.raw_payload?.customer?.email || o.raw_payload?.email || o.raw_payload?.contact_email || '';
 
-      if (!cust?.email) return false;
+      if (!email) return false;
 
       const notaJaEnviada     = o.raw_payload?.nota_enviada === true;
       const rastreioJaEnviado  = trk?.email_enviado === true;
@@ -145,6 +167,10 @@ export async function POST(req: NextRequest) {
 
     for (const order of targetOrders) {
       const cust = Array.isArray(order.customers) ? order.customers[0] : order.customers;
+      const custEmail = cust?.email || order.raw_payload?.customer?.email || order.raw_payload?.email || order.raw_payload?.contact_email || '';
+      const custNome = cust?.nome || (order.raw_payload?.customer ? `${order.raw_payload.customer.first_name || ''} ${order.raw_payload.customer.last_name || ''}`.trim() : 'Cliente');
+      const custObj = { nome: custNome, email: custEmail };
+
       let trk  = Array.isArray(order.trackings) ? order.trackings[0] : order.trackings;
       const addr = Array.isArray(order.addresses) ? order.addresses[0] : order.addresses;
 
@@ -190,7 +216,7 @@ export async function POST(req: NextRequest) {
         // ── Envio de Rastreio ───────────────────────────────────
         if ((tipo === 'rastreio' || tipo === 'ambos') && podeEnviarRastreio && trk?.codigo_rastreio) {
           const trackingUrl = `${appUrl}/rastreio/${trk.codigo_rastreio}`;
-          const htmlRastreio = buildRastreioHtml({ order, cust, trk, trackingUrl, empresaNome: lojaNomeEspecifico, storeInfo });
+          const htmlRastreio = buildRastreioHtml({ order, cust: custObj, trk, trackingUrl, empresaNome: lojaNomeEspecifico, storeInfo });
 
           if (resendApiKey) {
             await fetch('https://api.resend.com/emails', {
@@ -198,7 +224,7 @@ export async function POST(req: NextRequest) {
               headers: { Authorization: `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 from: fromEmail,
-                to: cust.email,
+                to: custObj.email,
                 subject: `Código de Rastreio — Pedido #${order.numero_pedido}`,
                 html: htmlRastreio,
               }),
@@ -227,7 +253,7 @@ export async function POST(req: NextRequest) {
 
         // ── Envio de Nota de Compra ─────────────────────────────
         if ((tipo === 'nota' || tipo === 'ambos') && podeEnviarNota) {
-          const htmlNota = buildNotaHtml({ order, cust, addr, cfg, storeInfo });
+          const htmlNota = buildNotaHtml({ order, cust: custObj, addr, cfg, storeInfo });
 
           if (resendApiKey) {
             await fetch('https://api.resend.com/emails', {
@@ -235,7 +261,7 @@ export async function POST(req: NextRequest) {
               headers: { Authorization: `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 from: fromEmail,
-                to: cust.email,
+                to: custObj.email,
                 subject: `Comprovante de Compra — Pedido #${order.numero_pedido}`,
                 html: htmlNota,
               }),

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { enviarRastreioShopify } from '@/lib/shopifyService';
+import { executarSincronizacaoShopify } from '@/lib/shopifySyncHelper';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +18,14 @@ function isAnteriorAHoje(orderCreatedAt: string): boolean {
 export async function GET(req: NextRequest) {
   try {
     const agoraIso = new Date().toISOString();
+
+    // 0. Sincronizar automaticamente novos pedidos da Shopify
+    let resSyncShopify: any = null;
+    try {
+      resSyncShopify = await executarSincronizacaoShopify();
+    } catch (syncErr: any) {
+      console.error('Erro na sincronização automática da Shopify no Cron:', syncErr);
+    }
 
     // 1. Carregar configurações gerais do banco
     const { data: settings } = await supabaseAdmin.from('settings').select('key, value');

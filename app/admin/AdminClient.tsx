@@ -672,6 +672,13 @@ export default function AdminClient() {
         setOrderBumpBradescoValor(activeStore.order_bump_bradesco_valor !== undefined ? String(activeStore.order_bump_bradesco_valor) : '14.76');
         setOrderBumpExpressEnabled(activeStore.order_bump_express_enabled !== false);
         setOrderBumpExpressValor(activeStore.order_bump_express_valor !== undefined ? String(activeStore.order_bump_express_valor) : '9.91');
+
+        setUpsellEnabled(activeStore.upsell_enabled !== undefined ? activeStore.upsell_enabled : (data.UPSELL_ENABLED === 'true'));
+        setUpsellTitle(activeStore.upsell_title || data.UPSELL_TITLE || 'Ganhe 15% OFF na sua próxima compra!');
+        setUpsellDescription(activeStore.upsell_description || data.UPSELL_DESCRIPTION || 'Aproveite nossa condição exclusiva de frete grátis e desconto para clientes.');
+        setUpsellCoupon(activeStore.upsell_coupon || data.UPSELL_COUPON || 'CLIENTE15');
+        setUpsellLink(activeStore.upsell_link || data.UPSELL_LINK || '');
+        setUpsellImageUrl(activeStore.upsell_image_url || data.UPSELL_IMAGE_URL || '');
       }
     } catch (err: any) {
       setSettingsError(err.message || 'Erro ao carregar configurações.');
@@ -714,17 +721,7 @@ export default function AdminClient() {
   }, [session, activeTab, activeStore?.id]);
 
   useEffect(() => {
-    if (activeStore) {
-      setEmpresaNome(activeStore.empresa_nome || '');
-      setEmpresaCnpj(activeStore.empresa_cnpj || '');
-      setEmpresaEndereco(activeStore.empresa_endereco || '');
-      setEmpresaCidade(activeStore.empresa_cidade || '');
-      setEmpresaEstado(activeStore.empresa_estado || '');
-      setEmpresaCep(activeStore.empresa_cep || '');
-    } else {
-      // Fallback para configurações globais se nenhuma loja estiver ativa
-      fetchSettings();
-    }
+    fetchSettings();
   }, [activeStore]);
 
   // Polling automático em tempo real (10s) sem recarregar a página
@@ -886,8 +883,10 @@ export default function AdminClient() {
     setBatchResult(null);
     setBatchProgress(null);
     try {
-      // 1. Obter a lista atualizada de itens da fila
-      const listRes = await fetch('/api/fila-emails', { headers: getAuthHeaders() });
+      const url = activeStore?.id 
+        ? `/api/fila-emails?store_id=${activeStore.id}`
+        : '/api/fila-emails';
+      const listRes = await fetch(url, { headers: getAuthHeaders() });
       const fullQueue: EmailQueueItem[] = await listRes.json();
 
       const todayStart = new Date(new Date().setHours(0, 0, 0, 0)).getTime();
@@ -1204,6 +1203,12 @@ export default function AdminClient() {
             order_bump_bradesco_valor: parseFloat(orderBumpBradescoValor) || 14.76,
             order_bump_express_enabled: orderBumpExpressEnabled,
             order_bump_express_valor: parseFloat(orderBumpExpressValor) || 9.91,
+            upsell_enabled: upsellEnabled,
+            upsell_title: upsellTitle,
+            upsell_description: upsellDescription,
+            upsell_coupon: upsellCoupon,
+            upsell_link: upsellLink,
+            upsell_image_url: upsellImageUrl,
           }),
         });
 
@@ -1248,6 +1253,12 @@ export default function AdminClient() {
           order_bump_bradesco_valor: parseFloat(orderBumpBradescoValor) || 14.76,
           order_bump_express_enabled: orderBumpExpressEnabled,
           order_bump_express_valor: parseFloat(orderBumpExpressValor) || 9.91,
+          upsell_enabled: upsellEnabled,
+          upsell_title: upsellTitle,
+          upsell_description: upsellDescription,
+          upsell_coupon: upsellCoupon,
+          upsell_link: upsellLink,
+          upsell_image_url: upsellImageUrl,
         }) : null);
         fetchStores();
       }
@@ -1303,8 +1314,8 @@ export default function AdminClient() {
 
   const queueStats = {
     total: emailQueue.length,
-    enviados: emailQueue.filter(o => o.trackings?.email_enviado).length,
-    pendentes: emailQueue.filter(o => !o.trackings?.email_enviado).length,
+    enviados: emailQueue.reduce((acc, o) => acc + (o.nota_enviada ? 1 : 0) + (o.trackings?.email_enviado ? 1 : 0), 0),
+    pendentes: emailQueue.reduce((acc, o) => acc + (!o.nota_enviada ? 1 : 0) + (!o.trackings?.email_enviado ? 1 : 0), 0),
   };
 
   // ── Loading & Hydration Guard ──

@@ -155,6 +155,12 @@ export async function POST(req: NextRequest) {
       order_bump_bradesco_valor,
       order_bump_express_enabled,
       order_bump_express_valor,
+      upsell_enabled,
+      upsell_title,
+      upsell_description,
+      upsell_coupon,
+      upsell_link,
+      upsell_image_url,
     } = body;
 
     if (!shopify_domain) {
@@ -192,6 +198,12 @@ export async function POST(req: NextRequest) {
         order_bump_bradesco_valor: order_bump_bradesco_valor !== undefined ? order_bump_bradesco_valor : 14.76,
         order_bump_express_enabled: order_bump_express_enabled !== undefined ? order_bump_express_enabled : true,
         order_bump_express_valor: order_bump_express_valor !== undefined ? order_bump_express_valor : 9.91,
+        upsell_enabled: upsell_enabled !== undefined ? upsell_enabled : false,
+        upsell_title: upsell_title || 'Ganhe 15% OFF na sua próxima compra!',
+        upsell_description: upsell_description || 'Aproveite nossa condição exclusiva de frete grátis e desconto para clientes.',
+        upsell_coupon: upsell_coupon || 'CLIENTE15',
+        upsell_link: upsell_link || '',
+        upsell_image_url: upsell_image_url || '',
         updated_at: new Date().toISOString(),
       }, { onConflict: 'shopify_domain' })
       .select()

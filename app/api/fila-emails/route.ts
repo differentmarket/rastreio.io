@@ -171,12 +171,15 @@ export async function GET(req: NextRequest) {
       const cust = Array.isArray(o.customers) ? o.customers[0] : o.customers;
       const trk = Array.isArray(o.trackings) ? o.trackings[0] : o.trackings;
       
+      const email = cust?.email || o.raw_payload?.customer?.email || o.raw_payload?.email || o.raw_payload?.contact_email || '';
+      const nome = cust?.nome || (o.raw_payload?.customer ? `${o.raw_payload.customer.first_name || ''} ${o.raw_payload.customer.last_name || ''}`.trim() : 'Cliente');
+
       return {
         id: o.id,
         numero_pedido: o.numero_pedido,
         status_pedido: o.status_pedido,
         created_at: o.created_at,
-        customers: cust,
+        customers: { nome, email },
         trackings: trk,
         nota_enviada: !!o.raw_payload?.nota_enviada,
         nota_enviada_em: o.raw_payload?.nota_enviada_em || null,

@@ -144,7 +144,7 @@ export async function GET(
     if (targetStoreId) {
       const { data: store } = await supabaseAdmin
         .from('stores')
-        .select('nome_loja, logo_url, primary_color, banner_url, banner_link, whatsapp_suporte, veopag_enabled, empresa_cidade, empresa_estado, taxa_enabled, taxa_nome, taxa_valor, taxa_link_pagamento, taxa_dias_tentativas, taxa_dia_exibicao, order_bump_bradesco_enabled, order_bump_bradesco_valor, order_bump_express_enabled, order_bump_express_valor')
+        .select('nome_loja, logo_url, primary_color, banner_url, banner_link, whatsapp_suporte, veopag_enabled, empresa_cidade, empresa_estado, taxa_enabled, taxa_nome, taxa_valor, taxa_link_pagamento, taxa_dias_tentativas, taxa_dia_exibicao, order_bump_bradesco_enabled, order_bump_bradesco_valor, order_bump_express_enabled, order_bump_express_valor, upsell_enabled, upsell_title, upsell_description, upsell_coupon, upsell_link, upsell_image_url')
         .eq('id', targetStoreId)
         .maybeSingle();
       if (store) {
@@ -233,12 +233,14 @@ export async function GET(
     const dia2 = diasTentativas[1] !== undefined ? diasTentativas[1] : 10.0;
     const dia3 = diasTentativas[2] !== undefined ? diasTentativas[2] : 11.0;
 
-    const upsellEnabled = cfg['UPSELL_ENABLED'] === 'true';
-    const upsellTitle = cfg['UPSELL_TITLE'] || 'Ganhe 15% OFF na sua próxima compra!';
-    const upsellDescription = cfg['UPSELL_DESCRIPTION'] || 'Use o cupom no checkout e aproveite frete grátis.';
-    const upsellCoupon = cfg['UPSELL_COUPON'] || 'CLIENTE15';
-    const upsellLink = cfg['UPSELL_LINK'] || '';
-    const upsellImageUrl = cfg['UPSELL_IMAGE_URL'] || '';
+    const upsellEnabled = storeCustomization?.upsell_enabled !== undefined 
+      ? storeCustomization.upsell_enabled 
+      : (cfg['UPSELL_ENABLED'] === 'true');
+    const upsellTitle = storeCustomization?.upsell_title || cfg['UPSELL_TITLE'] || 'Ganhe 15% OFF na sua próxima compra!';
+    const upsellDescription = storeCustomization?.upsell_description || cfg['UPSELL_DESCRIPTION'] || 'Use o cupom no checkout e aproveite frete grátis.';
+    const upsellCoupon = storeCustomization?.upsell_coupon || cfg['UPSELL_COUPON'] || 'CLIENTE15';
+    const upsellLink = storeCustomization?.upsell_link || cfg['UPSELL_LINK'] || '';
+    const upsellImageUrl = storeCustomization?.upsell_image_url || cfg['UPSELL_IMAGE_URL'] || '';
 
     const orderCreatedAtStr = orderData?.created_at || tracking.created_at;
     const history = Array.isArray(tracking.historico) ? tracking.historico : [];
