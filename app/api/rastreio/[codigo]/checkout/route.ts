@@ -27,14 +27,50 @@ export async function POST(
       return NextResponse.json({ error: 'Código de rastreio não encontrado.' }, { status: 404 });
     }
 
-    const { data: store, error: storeErr } = await supabaseAdmin
-      .from('stores')
-      .select('*')
-      .eq('id', tracking.store_id)
-      .maybeSingle();
+    let store = null;
+    let targetStoreId = tracking.store_id;
 
-    if (storeErr || !store) {
-      return NextResponse.json({ error: 'Loja associada não encontrada.' }, { status: 404 });
+    if (!targetStoreId) {
+      const { data: ord } = await supabaseAdmin
+        .from('trackings')
+        .select('orders ( store_id )')
+        .eq('id', tracking.id)
+        .maybeSingle();
+      if (ord?.orders) {
+        targetStoreId = (ord.orders as any).store_id;
+      }
+    }
+
+    if (targetStoreId) {
+      const { data: st } = await supabaseAdmin
+        .from('stores')
+        .select('*')
+        .eq('id', targetStoreId)
+        .maybeSingle();
+      if (st) {
+        store = st;
+      }
+    }
+
+    // Se não encontrou loja ou se for a loja padrão, monta um objeto store a partir das settings globais
+    if (!store) {
+      const { data: dbSettings } = await supabaseAdmin.from('settings').select('key, value');
+      const cfg: Record<string, string> = {};
+      dbSettings?.forEach(s => { cfg[s.key] = s.value; });
+
+      store = {
+        id: 'default-store',
+        nome_loja: cfg['EMPRESA_NOME'] || 'Loja Principal',
+        taxa_valor: cfg['TAXA_VALOR'] || '27.90',
+        veopag_enabled: cfg['VEOPAG_ENABLED'] === 'true',
+        veopag_client_id: cfg['VEOPAG_CLIENT_ID'] || '',
+        veopag_client_secret: cfg['VEOPAG_CLIENT_SECRET'] || '',
+        next_public_app_url: cfg['NEXT_PUBLIC_APP_URL'] || '',
+        order_bump_bradesco_enabled: cfg['ORDER_BUMP_BRADESCO_ENABLED'] !== 'false',
+        order_bump_bradesco_valor: 14.76,
+        order_bump_express_enabled: cfg['ORDER_BUMP_EXPRESS_ENABLED'] !== 'false',
+        order_bump_express_valor: 9.91,
+      };
     }
 
     // Buscar o CPF real descriptografado do cliente associado se o documento fornecido for mascarado ou incompleto

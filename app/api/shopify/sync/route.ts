@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
       }
 
       const cleanDomain = config.domain.replace(/^https?:\/\//, '');
-      let nextUrl: string | null = `https://${cleanDomain}/admin/api/2024-10/orders.json?status=any&financial_status=paid&limit=250&fields=id,order_number,financial_status,fulfillment_status,total_price,created_at,customer,shipping_address,line_items`;
+      let nextUrl: string | null = `https://${cleanDomain}/admin/api/2024-10/orders.json?status=any&financial_status=paid,pending&limit=250&fields=id,order_number,financial_status,fulfillment_status,total_price,created_at,customer,shipping_address,line_items`;
 
       while (nextUrl) {
         const res: Response = await fetch(nextUrl, {
@@ -145,6 +145,8 @@ export async function POST(req: NextRequest) {
       const shopifyOrderId = shopifyOrder.id;
       const orderNumber = String(shopifyOrder.order_number);
       const totalVal = parseFloat(shopifyOrder.total_price) || 0;
+      const rawPhone = shopifyOrder.customer?.phone || (shopifyOrder.shipping_address as any)?.phone || '';
+      const cleanPhone = rawPhone.replace(/\D/g, '');
 
       try {
         // Status interno
@@ -270,6 +272,35 @@ export async function POST(req: NextRequest) {
             } else {
               resultados.push({ numero_pedido: orderNumber, acao: 'atualizado', id: orderDbId! });
               logs.push({ tipo: 'sucesso', mensagem: `Pedido #${orderNumber} atualizado com sucesso.`, data: new Date().toISOString() });
+              
+              // Se o pedido foi atualizado para PAGO, atualizar o status da recuperação de IA
+              if (statusPedido === 'pago' || shopifyOrder.financial_status === 'paid') {
+                const { data: conv } = await supabaseAdmin
+                  .from('ai_recovery_conversations')
+                  .select('id, status, mensagens')
+                  .eq('order_id', orderDbId)
+                  .maybeSingle();
+
+                if (conv) {
+                  if (conv.status === 'pendente_envio') {
+                    await supabaseAdmin
+                      .from('ai_recovery_conversations')
+                      .update({ status: 'cancelado_ja_pago' })
+                      .eq('id', conv.id);
+                  } else if (conv.status === 'em_andamento') {
+                    const msgs = Array.isArray(conv.mensagens) ? conv.mensagens : [];
+                    msgs.push({
+                      sender: 'system',
+                      text: '🎉 Venda recuperada! Pedido pago pelo cliente.',
+                      timestamp: new Date().toISOString(),
+                    });
+                    await supabaseAdmin
+                      .from('ai_recovery_conversations')
+                      .update({ status: 'convertido', mensagens: msgs })
+                      .eq('id', conv.id);
+                  }
+                }
+              }
             }
           } else {
             const createdIso = shopifyOrder.created_at || new Date().toISOString();
@@ -299,6 +330,32 @@ export async function POST(req: NextRequest) {
               isNew = true;
               resultados.push({ numero_pedido: orderNumber, acao: 'criado', id: orderDbId! });
               logs.push({ tipo: 'sucesso', mensagem: `Pedido #${orderNumber} criado e salvo no banco.`, data: new Date().toISOString() });
+              
+              // Se for um novo pedido e estiver PENDENTE (não pago), agendar a recuperação por WhatsApp via IA
+              if (statusPedido === 'pendente' && cleanPhone) {
+                const customerName = shopifyOrder.customer
+                  ? `${shopifyOrder.customer.first_name || ''} ${shopifyOrder.customer.last_name || ''}`.trim()
+                  : 'Cliente';
+                  
+                const { data: dbSettings } = await supabaseAdmin.from('settings').select('key, value');
+                const cfg: Record<string, string> = {};
+                dbSettings?.forEach(s => { cfg[s.key] = s.value; });
+
+                const aiDelayMinutes = parseInt(cfg['AI_DELAY_MINUTES'] || '15', 10);
+                const agendadoParaRecuperacao = new Date(Date.now() + aiDelayMinutes * 60 * 1000).toISOString();
+
+                await supabaseAdmin.from('ai_recovery_conversations').insert({
+                  store_id: storeIdParam && storeIdParam !== 'default-store' ? storeIdParam : null,
+                  order_id: orderDbId,
+                  customer_phone: cleanPhone,
+                  customer_name: customerName,
+                  valor_pedido: totalVal,
+                  status: 'pendente_envio',
+                  agendado_para: agendadoParaRecuperacao,
+                  mensagens: [],
+                });
+                logs.push({ tipo: 'sucesso', mensagem: `Pedido #${orderNumber} pendente agendado para recuperação de vendas via WhatsApp.`, data: new Date().toISOString() });
+              }
             }
           }
         }
