@@ -145,6 +145,16 @@ export async function POST(req: NextRequest) {
       empresa_cidade,
       empresa_estado,
       empresa_cep,
+      taxa_enabled,
+      taxa_nome,
+      taxa_valor,
+      taxa_link_pagamento,
+      taxa_dias_tentativas,
+      taxa_dia_exibicao,
+      order_bump_bradesco_enabled,
+      order_bump_bradesco_valor,
+      order_bump_express_enabled,
+      order_bump_express_valor,
     } = body;
 
     if (!shopify_domain) {
@@ -172,6 +182,16 @@ export async function POST(req: NextRequest) {
         empresa_cidade,
         empresa_estado,
         empresa_cep,
+        taxa_enabled: taxa_enabled !== undefined ? taxa_enabled : true,
+        taxa_nome: taxa_nome || 'Taxa de Despacho Postal e Liberação Alfandegária',
+        taxa_valor: taxa_valor !== undefined ? taxa_valor : 27.90,
+        taxa_link_pagamento: taxa_link_pagamento || '',
+        taxa_dias_tentativas: taxa_dias_tentativas || '9,10,11',
+        taxa_dia_exibicao: taxa_dia_exibicao !== undefined ? taxa_dia_exibicao : 11,
+        order_bump_bradesco_enabled: order_bump_bradesco_enabled !== undefined ? order_bump_bradesco_enabled : true,
+        order_bump_bradesco_valor: order_bump_bradesco_valor !== undefined ? order_bump_bradesco_valor : 14.76,
+        order_bump_express_enabled: order_bump_express_enabled !== undefined ? order_bump_express_enabled : true,
+        order_bump_express_valor: order_bump_express_valor !== undefined ? order_bump_express_valor : 9.91,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'shopify_domain' })
       .select()

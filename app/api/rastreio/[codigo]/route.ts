@@ -144,7 +144,7 @@ export async function GET(
     if (targetStoreId) {
       const { data: store } = await supabaseAdmin
         .from('stores')
-        .select('nome_loja, logo_url, primary_color, banner_url, banner_link, whatsapp_suporte, veopag_enabled, empresa_cidade, empresa_estado')
+        .select('nome_loja, logo_url, primary_color, banner_url, banner_link, whatsapp_suporte, veopag_enabled, empresa_cidade, empresa_estado, taxa_enabled, taxa_nome, taxa_valor, taxa_link_pagamento, taxa_dias_tentativas, taxa_dia_exibicao, order_bump_bradesco_enabled, order_bump_bradesco_valor, order_bump_express_enabled, order_bump_express_valor')
         .eq('id', targetStoreId)
         .maybeSingle();
       if (store) {
@@ -212,11 +212,26 @@ export async function GET(
     const delayTransito = parseInt(cfg['DELAY_EM_TRANSITO_SAIU_ENTREGA'] || '3', 10);
     const delaySaiuEntrega = parseInt(cfg['DELAY_SAIU_ENTREGA_ENTREGUE'] || '1', 10);
 
-    const taxaEnabled = cfg['TAXA_ENABLED'] !== 'false';
-    const taxaDiaExibicao = parseInt(cfg['TAXA_DIA_EXIBICAO'] || '11', 10);
-    const taxaNome = cfg['TAXA_NOME'] || 'Taxa de Despacho Postal e Liberação Alfandegária';
-    const taxaValor = cfg['TAXA_VALOR'] || '27.90';
-    const taxaLink = cfg['TAXA_LINK_PAGAMENTO'] || '';
+    const taxaEnabled = storeCustomization?.taxa_enabled !== undefined 
+      ? storeCustomization.taxa_enabled 
+      : (cfg['TAXA_ENABLED'] !== 'false');
+
+    const taxaDiaExibicao = storeCustomization?.taxa_dia_exibicao !== undefined && storeCustomization?.taxa_dia_exibicao !== null
+      ? parseInt(storeCustomization.taxa_dia_exibicao, 10)
+      : parseInt(cfg['TAXA_DIA_EXIBICAO'] || '11', 10);
+
+    const taxaNome = storeCustomization?.taxa_nome || cfg['TAXA_NOME'] || 'Taxa de Despacho Postal e Liberação Alfandegária';
+    const taxaValor = storeCustomization?.taxa_valor !== undefined && storeCustomization?.taxa_valor !== null
+      ? String(storeCustomization.taxa_valor)
+      : cfg['TAXA_VALOR'] || '27.90';
+
+    const taxaLink = storeCustomization?.taxa_link_pagamento || cfg['TAXA_LINK_PAGAMENTO'] || '';
+
+    const diasTentativasStr = storeCustomization?.taxa_dias_tentativas || cfg['TAXA_DIAS_TENTATIVAS'] || '9,10,11';
+    const diasTentativas = diasTentativasStr.split(',').map((d: string) => parseFloat(d.trim())).filter((d: number) => !isNaN(d));
+    const dia1 = diasTentativas[0] !== undefined ? diasTentativas[0] : 9.0;
+    const dia2 = diasTentativas[1] !== undefined ? diasTentativas[1] : 10.0;
+    const dia3 = diasTentativas[2] !== undefined ? diasTentativas[2] : 11.0;
 
     const upsellEnabled = cfg['UPSELL_ENABLED'] === 'true';
     const upsellTitle = cfg['UPSELL_TITLE'] || 'Ganhe 15% OFF na sua próxima compra!';
@@ -379,9 +394,9 @@ export async function GET(
 
       // 4. Retentativas de Entrega nos dias 9, 10 e 11 se a taxa estiver ativada
       if (taxaEnabled) {
-        // Dia 9: 1ª tentativa às 16:20
-        const dia9Date = gerarDataEvento(orderCreatedAt, 9.0, 16, 20, lastEventDate);
-        if (daysDiff >= 9.0 && dia9Date.getTime() <= Date.now()) {
+        // 1ª tentativa
+        const dia9Date = gerarDataEvento(orderCreatedAt, dia1, 16, 20, lastEventDate);
+        if (daysDiff >= dia1 && dia9Date.getTime() <= Date.now()) {
           simulatedHistory.push({
             status: 'saiu_para_entrega',
             data: dia9Date.toISOString(),
@@ -391,9 +406,9 @@ export async function GET(
           lastEventDate = dia9Date;
         }
 
-        // Dia 10: 2ª tentativa às 15:45
-        const dia10Date = gerarDataEvento(orderCreatedAt, 10.0, 15, 45, lastEventDate);
-        if (daysDiff >= 10.0 && dia10Date.getTime() <= Date.now()) {
+        // 2ª tentativa
+        const dia10Date = gerarDataEvento(orderCreatedAt, dia2, 15, 45, lastEventDate);
+        if (daysDiff >= dia2 && dia10Date.getTime() <= Date.now()) {
           simulatedHistory.push({
             status: 'saiu_para_entrega',
             data: dia10Date.toISOString(),
@@ -403,9 +418,9 @@ export async function GET(
           lastEventDate = dia10Date;
         }
 
-        // Dia 11: 3ª tentativa & Pendente de Taxa às 11:15
-        const dia11Date = gerarDataEvento(orderCreatedAt, 11.0, 11, 15, lastEventDate);
-        if (daysDiff >= 11.0 && dia11Date.getTime() <= Date.now()) {
+        // 3ª tentativa & Pendente de Taxa
+        const dia11Date = gerarDataEvento(orderCreatedAt, dia3, 11, 15, lastEventDate);
+        if (daysDiff >= dia3 && dia11Date.getTime() <= Date.now()) {
           simulatedHistory.push({
             status: 'pendente_taxa',
             data: dia11Date.toISOString(),
@@ -447,7 +462,13 @@ export async function GET(
         customer: customerInfo,
         numero_pedido: orderData?.numero_pedido || null,
         itens: orderData?.itens || [],
-        store: storeCustomization,
+        store: storeCustomization ? {
+          ...storeCustomization,
+          order_bump_bradesco_enabled: storeCustomization.order_bump_bradesco_enabled !== undefined ? storeCustomization.order_bump_bradesco_enabled : true,
+          order_bump_bradesco_valor: storeCustomization.order_bump_bradesco_valor !== undefined ? parseFloat(storeCustomization.order_bump_bradesco_valor) : 14.76,
+          order_bump_express_enabled: storeCustomization.order_bump_express_enabled !== undefined ? storeCustomization.order_bump_express_enabled : true,
+          order_bump_express_valor: storeCustomization.order_bump_express_valor !== undefined ? parseFloat(storeCustomization.order_bump_express_valor) : 9.91,
+        } : null,
         taxa_info: {
           exibir: exibirTaxaFinal,
           paga: taxaPaga,
@@ -475,7 +496,13 @@ export async function GET(
       customer: customerInfo,
       numero_pedido: orderData?.numero_pedido || null,
       itens: orderData?.itens || [],
-      store: storeCustomization,
+      store: storeCustomization ? {
+        ...storeCustomization,
+        order_bump_bradesco_enabled: storeCustomization.order_bump_bradesco_enabled !== undefined ? storeCustomization.order_bump_bradesco_enabled : true,
+        order_bump_bradesco_valor: storeCustomization.order_bump_bradesco_valor !== undefined ? parseFloat(storeCustomization.order_bump_bradesco_valor) : 14.76,
+        order_bump_express_enabled: storeCustomization.order_bump_express_enabled !== undefined ? storeCustomization.order_bump_express_enabled : true,
+        order_bump_express_valor: storeCustomization.order_bump_express_valor !== undefined ? parseFloat(storeCustomization.order_bump_express_valor) : 9.91,
+      } : null,
       taxa_info: {
         exibir: exibirTaxaFinal,
         paga: taxaPaga,

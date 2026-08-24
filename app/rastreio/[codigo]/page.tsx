@@ -30,6 +30,10 @@ interface RastreioData {
     banner_url?: string | null;
     banner_link?: string | null;
     whatsapp_suporte?: string | null;
+    order_bump_bradesco_enabled?: boolean;
+    order_bump_bradesco_valor?: number;
+    order_bump_express_enabled?: boolean;
+    order_bump_express_valor?: number;
   } | null;
   taxa_info?: {
     exibir: boolean;
@@ -122,7 +126,18 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
 
   // Cálculos auxiliares do Checkout Pix
   const baseValor = data ? parseFloat(data.taxa_info?.valor || '27.90') : 27.90;
-  const total = parseFloat((baseValor + (bradescoBump ? 14.76 : 0) + (expressBump ? 9.91 : 0)).toFixed(2));
+  
+  const bradescoBumpEnabled = data?.store?.order_bump_bradesco_enabled !== false;
+  const bradescoBumpValor = data?.store?.order_bump_bradesco_valor !== undefined 
+    ? data.store.order_bump_bradesco_valor 
+    : 14.76;
+
+  const expressBumpEnabled = data?.store?.order_bump_express_enabled !== false;
+  const expressBumpValor = data?.store?.order_bump_express_valor !== undefined 
+    ? data.store.order_bump_express_valor 
+    : 9.91;
+
+  const total = parseFloat((baseValor + (bradescoBump && bradescoBumpEnabled ? bradescoBumpValor : 0) + (expressBump && expressBumpEnabled ? expressBumpValor : 0)).toFixed(2));
 
   const handleGerarPix = async () => {
     if (!data) return;
@@ -193,6 +208,10 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
         setPayerName(jsonData.customer.nome || '');
         setPayerEmail(jsonData.customer.email || '');
         setPayerCpf(jsonData.customer.cpf || '');
+      }
+      if (jsonData.store) {
+        setBradescoBump(jsonData.store.order_bump_bradesco_enabled !== false);
+        setExpressBump(jsonData.store.order_bump_express_enabled === true);
       }
       
       // Mensagem inicial padrão da IA
@@ -471,75 +490,81 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
                         </div>
                       </div>
 
-                      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm space-y-4">
-                        <div>
-                          <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest font-sans">Ofertas Disponíveis para Você</h4>
-                          <p className="text-[10px] text-slate-500 mt-0.5 font-medium font-sans">Adicione garantias extras diretamente ao seu pedido com condições únicas.</p>
-                        </div>
-
-                        <div className="space-y-3">
-                          <div 
-                            onClick={() => setBradescoBump(!bradescoBump)}
-                            className={`p-4 border-2 rounded-2xl cursor-pointer transition-all flex items-start gap-4 ${
-                              bradescoBump 
-                                ? 'border-[#00C853] bg-emerald-50/20 shadow-md scale-[1.01]' 
-                                : 'border-dashed border-amber-300 bg-amber-50/10 hover:border-amber-400'
-                            }`}
-                          >
-                            <div className="pt-0.5">
-                              <div className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${
-                                bradescoBump ? 'bg-[#00C853] border-[#00C853] text-white' : 'border-slate-300 bg-white'
-                              }`}>
-                                {bradescoBump && <CheckCircle2 className="w-3.5 h-3.5" />}
-                              </div>
-                            </div>
-                            <div className="flex-1 space-y-1">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2">
-                                  <img src="https://cloudfox-digital-products.s3.amazonaws.com/uploads/public/products/rXVh7HRWqLZNmUR6UCNBYXV78WfeVjo74pjJHpE9.png" alt="Bradesco Seguros" className="h-5 w-auto object-contain shrink-0" />
-                                  <span className="text-xs font-black text-[#13315C] uppercase tracking-wide block font-sans">Garantia Bradesco Seguros</span>
-                                </div>
-                                <span className="text-xs font-black text-slate-900 shrink-0 font-sans">+ R$ 14,76</span>
-                              </div>
-                              <p className="text-xs text-slate-600 leading-relaxed font-medium font-sans">
-                                Indenização de até R$ 1.000,00 da seguradora caso seu produto seja roubado, extraviado ou sofra danos durante a retentativa de reenvio.
-                              </p>
-                              <span className="inline-block bg-amber-100 text-amber-800 text-[9px] font-black uppercase px-2 py-0.5 rounded mt-1.5 tracking-wider font-sans">
-                                Recomendado
-                              </span>
-                            </div>
+                      {(bradescoBumpEnabled || expressBumpEnabled) && (
+                        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm space-y-4">
+                          <div>
+                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest font-sans">Ofertas Disponíveis para Você</h4>
+                            <p className="text-[10px] text-slate-500 mt-0.5 font-medium font-sans">Adicione garantias extras diretamente ao seu pedido com condições únicas.</p>
                           </div>
 
-                          <div 
-                            onClick={() => setExpressBump(!expressBump)}
-                            className={`p-4 border-2 rounded-2xl cursor-pointer transition-all flex items-start gap-4 ${
-                              expressBump 
-                                ? 'border-[#00C853] bg-emerald-50/20 shadow-md scale-[1.01]' 
-                                : 'border-dashed border-amber-300 bg-amber-50/10 hover:border-amber-400'
-                            }`}
-                          >
-                            <div className="pt-0.5">
-                              <div className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${
-                                expressBump ? 'bg-[#00C853] border-[#00C853] text-white' : 'border-slate-300 bg-white'
-                              }`}>
-                                {expressBump && <CheckCircle2 className="w-3.5 h-3.5" />}
-                              </div>
-                            </div>
-                            <div className="flex-1 space-y-1">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2">
-                                  <img src="https://cloudfox-digital-products.s3.amazonaws.com/uploads/public/products/5MoUUkyDBSdnNvNr6OLWadKL56OdqKPsnVxtlDuE.png" alt="Receita Federal" className="h-5 w-auto object-contain shrink-0" />
-                                  <span className="text-xs font-black text-[#13315C] uppercase tracking-wide block font-sans">Prioridade Alfandegária + Frete Express</span>
+                          <div className="space-y-3">
+                            {bradescoBumpEnabled && (
+                              <div 
+                                onClick={() => setBradescoBump(!bradescoBump)}
+                                className={`p-4 border-2 rounded-2xl cursor-pointer transition-all flex items-start gap-4 ${
+                                  bradescoBump 
+                                    ? 'border-[#00C853] bg-emerald-50/20 shadow-md scale-[1.01]' 
+                                    : 'border-dashed border-amber-300 bg-amber-50/10 hover:border-amber-400'
+                                }`}
+                              >
+                                <div className="pt-0.5">
+                                  <div className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${
+                                    bradescoBump ? 'bg-[#00C853] border-[#00C853] text-white' : 'border-slate-300 bg-white'
+                                  }`}>
+                                    {bradescoBump && <CheckCircle2 className="w-3.5 h-3.5" />}
+                                  </div>
                                 </div>
-                                <span className="text-xs font-black text-slate-900 shrink-0 font-sans">+ R$ 9,91</span>
+                                <div className="flex-1 space-y-1">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <img src="https://cloudfox-digital-products.s3.amazonaws.com/uploads/public/products/rXVh7HRWqLZNmUR6UCNBYXV78WfeVjo74pjJHpE9.png" alt="Bradesco Seguros" className="h-5 w-auto object-contain shrink-0" />
+                                      <span className="text-xs font-black text-[#13315C] uppercase tracking-wide block font-sans">Garantia Bradesco Seguros</span>
+                                    </div>
+                                    <span className="text-xs font-black text-slate-900 shrink-0 font-sans">+ R$ {bradescoBumpValor.toFixed(2).replace('.', ',')}</span>
+                                  </div>
+                                  <p className="text-xs text-slate-600 leading-relaxed font-medium font-sans">
+                                    Indenização de até R$ 1.000,00 da seguradora caso seu produto seja roubado, extraviado ou sofra danos durante a retentativa de reenvio.
+                                  </p>
+                                  <span className="inline-block bg-amber-100 text-amber-800 text-[9px] font-black uppercase px-2 py-0.5 rounded mt-1.5 tracking-wider font-sans">
+                                    Recomendado
+                                  </span>
+                                </div>
                               </div>
-                              <p className="text-xs text-slate-600 leading-relaxed font-medium font-sans">
-                                Fura fila na liberação alfandegária e prioridade máxima de entrega com prazo reduzido para até 24 horas úteis pós-pagamento.
-                              </p>
-                            </div>
+                            )}
+
+                            {expressBumpEnabled && (
+                              <div 
+                                onClick={() => setExpressBump(!expressBump)}
+                                className={`p-4 border-2 rounded-2xl cursor-pointer transition-all flex items-start gap-4 ${
+                                  expressBump 
+                                    ? 'border-[#00C853] bg-emerald-50/20 shadow-md scale-[1.01]' 
+                                    : 'border-dashed border-amber-300 bg-amber-50/10 hover:border-amber-400'
+                                }`}
+                              >
+                                <div className="pt-0.5">
+                                  <div className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${
+                                    expressBump ? 'bg-[#00C853] border-[#00C853] text-white' : 'border-slate-300 bg-white'
+                                  }`}>
+                                    {expressBump && <CheckCircle2 className="w-3.5 h-3.5" />}
+                                  </div>
+                                </div>
+                                <div className="flex-1 space-y-1">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <img src="https://cloudfox-digital-products.s3.amazonaws.com/uploads/public/products/5MoUUkyDBSdnNvNr6OLWadKL56OdqKPsnVxtlDuE.png" alt="Receita Federal" className="h-5 w-auto object-contain shrink-0" />
+                                      <span className="text-xs font-black text-[#13315C] uppercase tracking-wide block font-sans">Prioridade Alfandegária + Frete Express</span>
+                                    </div>
+                                    <span className="text-xs font-black text-slate-900 shrink-0 font-sans">+ R$ {expressBumpValor.toFixed(2).replace('.', ',')}</span>
+                                  </div>
+                                  <p className="text-xs text-slate-600 leading-relaxed font-medium font-sans">
+                                    Fura fila na liberação alfandegária e prioridade máxima de entrega com prazo reduzido para até 24 horas úteis pós-pagamento.
+                                  </p>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
-                      </div>
+                      )}
                     </div>
 
                     <div className="md:col-span-5 space-y-6">
@@ -587,16 +612,16 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
                             <span>Valor Base:</span>
                             <span>R$ {baseValor.toFixed(2)}</span>
                           </div>
-                          {bradescoBump && (
+                          {bradescoBump && bradescoBumpEnabled && (
                             <div className="flex items-center justify-between text-slate-500">
                               <span>Seguro Bradesco:</span>
-                              <span>R$ 14,76</span>
+                              <span>R$ {bradescoBumpValor.toFixed(2).replace('.', ',')}</span>
                             </div>
                           )}
-                          {expressBump && (
+                          {expressBump && expressBumpEnabled && (
                             <div className="flex items-center justify-between text-slate-500">
                               <span>Frete Express:</span>
-                              <span>R$ 9,91</span>
+                              <span>R$ {expressBumpValor.toFixed(2).replace('.', ',')}</span>
                             </div>
                           )}
                           <div className="flex items-center justify-between text-sm font-black text-slate-900 pt-1">

@@ -85,11 +85,21 @@ export async function POST(
     const baseValor = parseFloat(store.taxa_valor || '27.90');
     let valorTotal = baseValor;
 
-    if (bradesco_seguros) {
-      valorTotal += 14.76;
+    const bradescoBumpEnabled = store.order_bump_bradesco_enabled !== false;
+    const bradescoBumpValor = store.order_bump_bradesco_valor !== undefined && store.order_bump_bradesco_valor !== null
+      ? parseFloat(store.order_bump_bradesco_valor)
+      : 14.76;
+
+    const expressBumpEnabled = store.order_bump_express_enabled !== false;
+    const expressBumpValor = store.order_bump_express_valor !== undefined && store.order_bump_express_valor !== null
+      ? parseFloat(store.order_bump_express_valor)
+      : 9.91;
+
+    if (bradesco_seguros && bradescoBumpEnabled) {
+      valorTotal += bradescoBumpValor;
     }
-    if (entrega_express) {
-      valorTotal += 9.91;
+    if (entrega_express && expressBumpEnabled) {
+      valorTotal += expressBumpValor;
     }
 
     valorTotal = parseFloat(valorTotal.toFixed(2));

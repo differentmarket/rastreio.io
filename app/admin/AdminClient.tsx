@@ -255,6 +255,12 @@ export default function AdminClient() {
   const [veopagClientId, setVeopagClientId] = useState('');
   const [veopagClientSecret, setVeopagClientSecret] = useState('');
 
+  // Order Bumps por Loja
+  const [orderBumpBradescoEnabled, setOrderBumpBradescoEnabled] = useState(true);
+  const [orderBumpBradescoValor, setOrderBumpBradescoValor] = useState('14.76');
+  const [orderBumpExpressEnabled, setOrderBumpExpressEnabled] = useState(true);
+  const [orderBumpExpressValor, setOrderBumpExpressValor] = useState('9.91');
+
   // Upsell & Recompra
   const [upsellEnabled, setUpsellEnabled] = useState(false);
   const [upsellTitle, setUpsellTitle] = useState('Ganhe 15% OFF na sua próxima compra!');
@@ -654,6 +660,18 @@ export default function AdminClient() {
         setVeopagEnabled(activeStore.veopag_enabled || false);
         setVeopagClientId(activeStore.veopag_client_id || '');
         setVeopagClientSecret(activeStore.veopag_client_secret || '');
+
+        setTaxaEnabled(activeStore.taxa_enabled !== undefined ? activeStore.taxa_enabled : true);
+        setTaxaDiasTentativas(activeStore.taxa_dias_tentativas || '9,10,11');
+        setTaxaDiaExibicao(activeStore.taxa_dia_exibicao !== undefined ? String(activeStore.taxa_dia_exibicao) : '11');
+        setTaxaNome(activeStore.taxa_nome || 'Taxa de Despacho Postal e Liberação Alfandegária');
+        setTaxaValor(activeStore.taxa_valor !== undefined ? String(activeStore.taxa_valor) : '27.90');
+        setTaxaLinkPagamento(activeStore.taxa_link_pagamento || '');
+
+        setOrderBumpBradescoEnabled(activeStore.order_bump_bradesco_enabled !== false);
+        setOrderBumpBradescoValor(activeStore.order_bump_bradesco_valor !== undefined ? String(activeStore.order_bump_bradesco_valor) : '14.76');
+        setOrderBumpExpressEnabled(activeStore.order_bump_express_enabled !== false);
+        setOrderBumpExpressValor(activeStore.order_bump_express_valor !== undefined ? String(activeStore.order_bump_express_valor) : '9.91');
       }
     } catch (err: any) {
       setSettingsError(err.message || 'Erro ao carregar configurações.');
@@ -1176,6 +1194,16 @@ export default function AdminClient() {
             empresa_cidade: empresaCidade,
             empresa_estado: empresaEstado,
             empresa_cep: empresaCep,
+            taxa_enabled: taxaEnabled,
+            taxa_nome: taxaNome,
+            taxa_valor: parseFloat(taxaValor) || 27.90,
+            taxa_link_pagamento: taxaLinkPagamento,
+            taxa_dias_tentativas: taxaDiasTentativas,
+            taxa_dia_exibicao: parseInt(taxaDiaExibicao, 10) || 11,
+            order_bump_bradesco_enabled: orderBumpBradescoEnabled,
+            order_bump_bradesco_valor: parseFloat(orderBumpBradescoValor) || 14.76,
+            order_bump_express_enabled: orderBumpExpressEnabled,
+            order_bump_express_valor: parseFloat(orderBumpExpressValor) || 9.91,
           }),
         });
 
@@ -1210,6 +1238,16 @@ export default function AdminClient() {
           empresa_cidade: empresaCidade,
           empresa_estado: empresaEstado,
           empresa_cep: empresaCep,
+          taxa_enabled: taxaEnabled,
+          taxa_nome: taxaNome,
+          taxa_valor: parseFloat(taxaValor) || 27.90,
+          taxa_link_pagamento: taxaLinkPagamento,
+          taxa_dias_tentativas: taxaDiasTentativas,
+          taxa_dia_exibicao: parseInt(taxaDiaExibicao, 10) || 11,
+          order_bump_bradesco_enabled: orderBumpBradescoEnabled,
+          order_bump_bradesco_valor: parseFloat(orderBumpBradescoValor) || 14.76,
+          order_bump_express_enabled: orderBumpExpressEnabled,
+          order_bump_express_valor: parseFloat(orderBumpExpressValor) || 9.91,
         }) : null);
         fetchStores();
       }
@@ -2773,6 +2811,72 @@ export default function AdminClient() {
                       <SettingsInput label="Link da Página de Pagamento (Checkout Externo)" value={taxaLinkPagamento} onChange={setTaxaLinkPagamento} placeholder="https://checkout.sualoja.com/taxa" hint="URL de redirecionamento quando o checkout VeoPag não está ativo." />
                     </div>
                   )}
+                </div>
+
+                {/* ═══════ CARD 5.5: Garantias / Order Bumps ═══════ */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                  <div className="px-6 py-4 bg-gradient-to-r from-[#13315C]/10 to-[#13315C]/5 border-b border-slate-800 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-xl bg-indigo-500/15 text-indigo-400 border border-indigo-500/20"><ShoppingBag className="w-5 h-5" /></div>
+                      <div>
+                        <h3 className="text-sm font-extrabold text-white">Ofertas & Order Bumps (Checkout Taxa)</h3>
+                        <p className="text-[10px] text-slate-400">Configuração de garantias extras oferecidas no checkout da taxa</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-6">
+                    {/* Bump 1: Bradesco Seguros */}
+                    <div className="p-4 bg-slate-950/40 border border-slate-800/80 rounded-xl space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <input 
+                            type="checkbox" 
+                            id="bump_bradesco_enabled" 
+                            checked={orderBumpBradescoEnabled} 
+                            onChange={e => setOrderBumpBradescoEnabled(e.target.checked)}
+                            className="rounded border-slate-750 bg-slate-950 text-indigo-600 focus:ring-indigo-500/30"
+                          />
+                          <label htmlFor="bump_bradesco_enabled" className="text-xs font-bold text-white cursor-pointer select-none">Habilitar Garantia Bradesco Seguros</label>
+                        </div>
+                      </div>
+                      {orderBumpBradescoEnabled && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <SettingsInput 
+                            label="Valor da Garantia (R$)" 
+                            value={orderBumpBradescoValor} 
+                            onChange={setOrderBumpBradescoValor} 
+                            placeholder="14.76" 
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Bump 2: Frete Express */}
+                    <div className="p-4 bg-slate-950/40 border border-slate-800/80 rounded-xl space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <input 
+                            type="checkbox" 
+                            id="bump_express_enabled" 
+                            checked={orderBumpExpressEnabled} 
+                            onChange={e => setOrderBumpExpressEnabled(e.target.checked)}
+                            className="rounded border-slate-750 bg-slate-950 text-indigo-600 focus:ring-indigo-500/30"
+                          />
+                          <label htmlFor="bump_express_enabled" className="text-xs font-bold text-white cursor-pointer select-none">Habilitar Prioridade Alfandegária + Frete Express</label>
+                        </div>
+                      </div>
+                      {orderBumpExpressEnabled && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <SettingsInput 
+                            label="Valor da Taxa Express (R$)" 
+                            value={orderBumpExpressValor} 
+                            onChange={setOrderBumpExpressValor} 
+                            placeholder="9.91" 
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {/* ═══════ CARD 6: VeoPag Checkout Pix ═══════ */}
