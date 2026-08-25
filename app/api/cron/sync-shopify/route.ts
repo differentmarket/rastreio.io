@@ -19,10 +19,10 @@ export async function GET(req: NextRequest) {
   try {
     const agoraIso = new Date().toISOString();
 
-    // 0. Sincronizar automaticamente novos pedidos da Shopify
+    // 0. Sincronizar automaticamente novos pedidos da Shopify (modo otimizado)
     let resSyncShopify: any = null;
     try {
-      resSyncShopify = await executarSincronizacaoShopify();
+      resSyncShopify = await executarSincronizacaoShopify(undefined, true);
     } catch (syncErr: any) {
       console.error('Erro na sincronização automática da Shopify no Cron:', syncErr);
     }

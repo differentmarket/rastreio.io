@@ -12,7 +12,7 @@ function addOneBusinessDay(): Date {
   return date;
 }
 
-export async function executarSincronizacaoShopify(storeIdParam?: string) {
+export async function executarSincronizacaoShopify(storeIdParam?: string, onlyRecent: boolean = false) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const isMock = supabaseUrl.includes('mock-project');
 
@@ -68,7 +68,8 @@ export async function executarSincronizacaoShopify(storeIdParam?: string) {
       }
 
       const cleanDomain = config.domain.replace(/^https?:\/\//, '');
-      let nextUrl: string | null = `https://${cleanDomain}/admin/api/2024-10/orders.json?status=any&financial_status=paid,pending&limit=250&fields=id,order_number,financial_status,fulfillment_status,total_price,created_at,customer,shipping_address,line_items,note_attributes`;
+      const dateFilter = onlyRecent ? `&updated_at_min=${new Date(Date.now() - 48 * 3600 * 1000).toISOString()}&limit=50` : '&limit=250';
+      let nextUrl: string | null = `https://${cleanDomain}/admin/api/2024-10/orders.json?status=any&financial_status=paid,pending${dateFilter}&fields=id,order_number,financial_status,fulfillment_status,total_price,created_at,customer,shipping_address,line_items,note_attributes`;
 
       try {
         while (nextUrl) {
@@ -93,12 +94,16 @@ export async function executarSincronizacaoShopify(storeIdParam?: string) {
           const pageOrders = data.orders || [];
           shopifyOrders.push(...pageOrders);
 
-          const linkHeader = res.headers.get('Link');
-          if (linkHeader && linkHeader.includes('rel="next"')) {
-            const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
-            nextUrl = match ? match[1] : null;
+          if (onlyRecent) {
+            nextUrl = null; // No modo otimizado do cron, faz apenas 1 página de busca
           } else {
-            nextUrl = null;
+            const linkHeader = res.headers.get('Link');
+            if (linkHeader && linkHeader.includes('rel="next"')) {
+              const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+              nextUrl = match ? match[1] : null;
+            } else {
+              nextUrl = null;
+            }
           }
         }
       } catch (err: any) {
