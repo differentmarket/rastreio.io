@@ -89,23 +89,34 @@ Para recriar ou atualizar a estrutura do banco de dados no Supabase, execute o a
 
 ## 7. Automações e Regras de Negócio de E-mail / Rastreio
 
-### A. Fluxo de Sincronização de Pedidos Shopify
-1. **Cron Job em Background (`/api/cron/sync-shopify`)**:
-   - Conecta na API REST da Shopify (`orders.json?status=any&financial_status=paid,pending`) para todas as lojas ativas na tabela `stores` através do helper `lib/shopifySyncHelper.ts`.
-   - Salva e atualiza pedidos no Supabase sem necessidade de acionamento manual.
-2. **Webhooks Shopify em Tempo Real (`/api/webhooks/shopify`)**:
-   - Processa notificações instantâneas nos tópicos `orders/create`, `orders/updated`, `orders/paid`.
-3. **Trigger Manual**: Botão "Sincronizar Shopify" no painel Admin.
+### A. Arquitetura de Sincronização de Pedidos Shopify (Triplo Canal)
 
-### B. Regra de Envio do Comprovante de Compra (Nota Fiscal)
+1. **Cron Job em Background Otimizado (`/api/cron/sync-shopify`)**:
+   - **Mecanismo:** Executa automaticamente em background a cada 5 a 15 minutos (via cron-job.org ou Vercel Cron).
+   - **Helper Dedicado (`lib/shopifySyncHelper.ts`)**: Função `executarSincronizacaoShopify(storeIdParam?, onlyRecent=true)` que itera sobre todas as lojas ativas da tabela `stores`.
+   - **Otimização Contra Timeout (cron-job.org < 30s):** O parâmetro `onlyRecent=true` restringe a busca da Shopify aos pedidos atualizados nas últimas 72 horas (`updated_at_min=${threeDaysAgoIso}`) e limita a resposta a 1 página (250 itens). Isso reduziu a resposta do cron de >45s para **< 2s**, eliminando o erro *Failed (timeout)* do cron-job.org.
+   - **Ordenação Cronológica Crescente (`order=created_at+asc`):** Mantém a ordem do pedido mais antigo para o mais novo. Graças ao filtro `updated_at_min` das últimas 72h, a resposta ignora vendas de meses atrás (#1001) e inicia a importação exatamente no primeiro pedido recente pendente (ex: #1429 em diante até o #1498), salvando 100% dos pedidos de hoje na ordem cronológica correta.
+
+2. **Webhooks Shopify em Tempo Real (`/api/webhooks/shopify`)**:
+   - **Mecanismo:** Recebe requisições HTTP POST instantâneas da Shopify nos tópicos `orders/create`, `orders/updated` e `orders/paid`.
+   - Valida a assinatura HMAC (`x-shopify-hmac-sha256`) e insere/atualiza o pedido e cliente no Supabase em questão de segundos.
+
+3. **Sincronização Manual via Painel Admin (`/api/shopify/sync`)**:
+   - **Mecanismo:** Botão "Sincronizar com Shopify" na aba de Pedidos do Admin, permitindo forçar a busca instantânea pela API REST.
+
+### B. Extração Flexível de Dados do Cliente e Fila de E-mails
+- **Resiliência de E-mail e Nome (`app/api/fila-emails` e `app/api/pedidos/enviar-lote`)**:
+  - Para evitar que pedidos fiquem travados na fila caso a relação com a tabela `customers` retorne nula, o sistema aplica um fallback extraindo o e-mail e nome diretamente dos dados brutos em `raw_payload` (ex: `raw_payload.customer.email` ou `raw_payload.email`).
+
+### C. Regra de Envio do Comprovante de Compra (Nota Fiscal)
 - **Janela de Espera de 2 Horas**:
   - Quando um pedido é pago, o sistema grava o prazo `enviar_nota_em` para 2 horas após a compra.
-  - O cron agendado dispara o e-mail do Comprovante de Compra automaticamente após passadas as 2 horas.
+  - O cron agendado dispara o e-mail do Comprovante de Compra automaticamente assim que a compra completa 2 horas.
   - O intervalo de 2h pode ser configurado em `NOTA_DELAY_HORAS`.
 - **Disparo Manual**:
   - O botão de disparo no Admin ignora o delay de 2 horas e envia imediatamente a nota fiscal para os pedidos pendentes elegíveis.
 
-### C. Regra de Envio de Código de Rastreio
+### D. Regra de Envio de Código de Rastreio
 - **Disparo no Próximo Dia Útil**:
   - O e-mail de rastreio **não é enviado no mesmo dia da compra**.
   - O rastreio só é enviado se a **Nota Fiscal já tiver sido enviada previamente** (`nota_enviada === true`) e se a data do pedido for anterior ao dia de hoje (`criadoEmDiaAnterior === true`).
