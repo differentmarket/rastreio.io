@@ -69,7 +69,7 @@ export async function executarSincronizacaoShopify(storeIdParam?: string, onlyRe
 
       const cleanDomain = config.domain.replace(/^https?:\/\//, '');
       const threeDaysAgoIso = new Date(Date.now() - 72 * 3600 * 1000).toISOString();
-      const dateFilter = onlyRecent ? `&updated_at_min=${threeDaysAgoIso}&limit=250` : '&limit=250';
+      const dateFilter = onlyRecent ? `&updated_at_min=${threeDaysAgoIso}&limit=40` : '&limit=250';
       let nextUrl: string | null = `https://${cleanDomain}/admin/api/2024-10/orders.json?status=any&financial_status=paid,pending&order=created_at+asc${dateFilter}&fields=id,order_number,financial_status,fulfillment_status,total_price,created_at,customer,shipping_address,line_items,note_attributes`;
 
       try {
@@ -136,7 +136,70 @@ export async function executarSincronizacaoShopify(storeIdParam?: string, onlyRe
         if (shopifyOrder.financial_status === 'paid') statusPedido = 'pago';
         if (shopifyOrder.fulfillment_status === 'fulfilled') statusPedido = 'enviado';
 
-        // Upsert do cliente
+        // 1. Verificar se o pedido já existe no banco de dados para evitar requisições desnecessárias
+        let orderDbId: string | null = null;
+        let isNew = false;
+
+        const { data: existingOrder } = isMock
+          ? { data: null }
+          : await supabaseAdmin
+              .from('orders')
+              .select('id, status_pedido')
+              .eq('shopify_order_id', shopifyOrderId)
+              .maybeSingle();
+
+        if (existingOrder) {
+          orderDbId = existingOrder.id;
+
+          // Se o status mudou (ex: de pendente para pago), atualiza no banco
+          if (existingOrder.status_pedido !== statusPedido) {
+            await supabaseAdmin
+              .from('orders')
+              .update({
+                status_pedido: statusPedido,
+                valor_total: totalVal,
+                itens: shopifyOrder.line_items,
+              })
+              .eq('id', orderDbId);
+
+            totalAtualizados++;
+            todosResultados.push({ numero_pedido: orderNumber, acao: 'atualizado', id: orderDbId });
+
+            // Se o pedido foi pago, atualizar recuperação de IA
+            if (statusPedido === 'pago' || shopifyOrder.financial_status === 'paid') {
+              const { data: conv } = await supabaseAdmin
+                .from('ai_recovery_conversations')
+                .select('id, status, mensagens')
+                .eq('order_id', orderDbId)
+                .maybeSingle();
+
+              if (conv) {
+                if (conv.status === 'pendente_envio') {
+                  await supabaseAdmin
+                    .from('ai_recovery_conversations')
+                    .update({ status: 'cancelado_ja_pago' })
+                    .eq('id', conv.id);
+                } else if (conv.status === 'em_andamento') {
+                  const msgs = Array.isArray(conv.mensagens) ? conv.mensagens : [];
+                  msgs.push({
+                    sender: 'system',
+                    text: '🎉 Venda recuperada! Pedido pago pelo cliente.',
+                    timestamp: new Date().toISOString(),
+                  });
+                  await supabaseAdmin
+                    .from('ai_recovery_conversations')
+                    .update({ status: 'convertido', mensagens: msgs })
+                    .eq('id', conv.id);
+                }
+              }
+            }
+          }
+
+          // Pedido já existia e está atualizado, avança sem recriar cliente/endereço/conversa/rastreio
+          continue;
+        }
+
+        // Upsert do cliente (somente para pedidos NOVOS)
         let customerId: string | null = null;
         if (shopifyOrder.customer) {
           const cust = shopifyOrder.customer;
@@ -200,7 +263,7 @@ export async function executarSincronizacaoShopify(storeIdParam?: string, onlyRe
           }
         }
 
-        // Upsert do endereço
+        // Upsert do endereço (somente para pedidos NOVOS)
         let addressId: string | null = null;
         if (!isMock && customerId && shopifyOrder.shipping_address) {
           const addr = shopifyOrder.shipping_address;
@@ -223,124 +286,63 @@ export async function executarSincronizacaoShopify(storeIdParam?: string, onlyRe
           }
         }
 
-        // Upsert do pedido
-        let orderDbId: string | null = null;
-        let isNew = false;
+        // Criação do novo pedido
+        const createdIso = shopifyOrder.created_at || new Date().toISOString();
+        const enviarNotaEm = new Date(new Date(createdIso).getTime() + 2 * 3600 * 1000).toISOString();
+        const storeTargetId = currentStoreId && currentStoreId !== 'default-store' ? currentStoreId : null;
 
-        if (isMock) {
-          orderDbId = `mock-shopify-${shopifyOrderId}`;
+        const { data: newOrder, error: insErr } = await supabaseAdmin
+          .from('orders')
+          .insert({
+            shopify_order_id: shopifyOrderId,
+            customer_id: customerId,
+            address_id: addressId,
+            store_id: storeTargetId,
+            numero_pedido: orderNumber,
+            status_pedido: statusPedido,
+            valor_total: totalVal,
+            itens: shopifyOrder.line_items,
+            created_at: createdIso,
+            raw_payload: {
+              ...shopifyOrder,
+              enviar_nota_em: enviarNotaEm,
+              nota_enviada: false,
+            },
+          })
+          .select('id')
+          .single();
+
+        if (!insErr && newOrder) {
+          orderDbId = newOrder.id;
           isNew = true;
-        } else {
-          const { data: existingOrder } = await supabaseAdmin
-            .from('orders')
-            .select('id')
-            .eq('shopify_order_id', shopifyOrderId)
-            .maybeSingle();
+          totalCriados++;
+          todosResultados.push({ numero_pedido: orderNumber, acao: 'criado', id: orderDbId });
 
-          if (existingOrder) {
-            orderDbId = existingOrder.id;
-            const { error: updErr } = await supabaseAdmin
-              .from('orders')
-              .update({
-                status_pedido: statusPedido,
-                valor_total: totalVal,
-                itens: shopifyOrder.line_items,
-              })
-              .eq('id', orderDbId);
+          // Agendar IA para novos pedidos pendentes
+          if (statusPedido === 'pendente' && cleanPhone) {
+            const customerName = shopifyOrder.customer
+              ? `${shopifyOrder.customer.first_name || ''} ${shopifyOrder.customer.last_name || ''}`.trim()
+              : 'Cliente';
 
-            if (!updErr) {
-              totalAtualizados++;
-              todosResultados.push({ numero_pedido: orderNumber, acao: 'atualizado', id: orderDbId! });
+            const { data: dbSettings } = await supabaseAdmin.from('settings').select('key, value');
+            const cfg: Record<string, string> = {};
+            dbSettings?.forEach((s) => {
+              cfg[s.key] = s.value;
+            });
 
-              // Se o pedido foi pago, atualizar recuperação de IA
-              if (statusPedido === 'pago' || shopifyOrder.financial_status === 'paid') {
-                const { data: conv } = await supabaseAdmin
-                  .from('ai_recovery_conversations')
-                  .select('id, status, mensagens')
-                  .eq('order_id', orderDbId)
-                  .maybeSingle();
+            const aiDelayMinutes = parseInt(cfg['AI_DELAY_MINUTES'] || '15', 10);
+            const agendadoParaRecuperacao = new Date(Date.now() + aiDelayMinutes * 60 * 1000).toISOString();
 
-                if (conv) {
-                  if (conv.status === 'pendente_envio') {
-                    await supabaseAdmin
-                      .from('ai_recovery_conversations')
-                      .update({ status: 'cancelado_ja_pago' })
-                      .eq('id', conv.id);
-                  } else if (conv.status === 'em_andamento') {
-                    const msgs = Array.isArray(conv.mensagens) ? conv.mensagens : [];
-                    msgs.push({
-                      sender: 'system',
-                      text: '🎉 Venda recuperada! Pedido pago pelo cliente.',
-                      timestamp: new Date().toISOString(),
-                    });
-                    await supabaseAdmin
-                      .from('ai_recovery_conversations')
-                      .update({ status: 'convertido', mensagens: msgs })
-                      .eq('id', conv.id);
-                  }
-                }
-              }
-            }
-          } else {
-            const createdIso = shopifyOrder.created_at || new Date().toISOString();
-            const enviarNotaEm = new Date(new Date(createdIso).getTime() + 2 * 3600 * 1000).toISOString();
-
-            const storeTargetId = currentStoreId && currentStoreId !== 'default-store' ? currentStoreId : null;
-
-            const { data: newOrder, error: insErr } = await supabaseAdmin
-              .from('orders')
-              .insert({
-                shopify_order_id: shopifyOrderId,
-                customer_id: customerId,
-                address_id: addressId,
-                store_id: storeTargetId,
-                numero_pedido: orderNumber,
-                status_pedido: statusPedido,
-                valor_total: totalVal,
-                itens: shopifyOrder.line_items,
-                created_at: createdIso,
-                raw_payload: {
-                  ...shopifyOrder,
-                  enviar_nota_em: enviarNotaEm,
-                  nota_enviada: false,
-                },
-              })
-              .select('id')
-              .single();
-
-            if (!insErr && newOrder) {
-              orderDbId = newOrder.id;
-              isNew = true;
-              totalCriados++;
-              todosResultados.push({ numero_pedido: orderNumber, acao: 'criado', id: orderDbId! });
-
-              // Agendar IA para novos pedidos pendentes
-              if (statusPedido === 'pendente' && cleanPhone) {
-                const customerName = shopifyOrder.customer
-                  ? `${shopifyOrder.customer.first_name || ''} ${shopifyOrder.customer.last_name || ''}`.trim()
-                  : 'Cliente';
-
-                const { data: dbSettings } = await supabaseAdmin.from('settings').select('key, value');
-                const cfg: Record<string, string> = {};
-                dbSettings?.forEach((s) => {
-                  cfg[s.key] = s.value;
-                });
-
-                const aiDelayMinutes = parseInt(cfg['AI_DELAY_MINUTES'] || '15', 10);
-                const agendadoParaRecuperacao = new Date(Date.now() + aiDelayMinutes * 60 * 1000).toISOString();
-
-                await supabaseAdmin.from('ai_recovery_conversations').insert({
-                  store_id: storeTargetId,
-                  order_id: orderDbId,
-                  customer_phone: cleanPhone,
-                  customer_name: customerName,
-                  valor_pedido: totalVal,
-                  status: 'pendente_envio',
-                  agendado_para: agendadoParaRecuperacao,
-                  mensagens: [],
-                });
-              }
-            }
+            await supabaseAdmin.from('ai_recovery_conversations').insert({
+              store_id: storeTargetId,
+              order_id: orderDbId,
+              customer_phone: cleanPhone,
+              customer_name: customerName,
+              valor_pedido: totalVal,
+              status: 'pendente_envio',
+              agendado_para: agendadoParaRecuperacao,
+              mensagens: [],
+            });
           }
         }
 
