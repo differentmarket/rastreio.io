@@ -87,7 +87,32 @@ Para recriar ou atualizar a estrutura do banco de dados no Supabase, execute o a
 
 ---
 
-## 6. Procedimento de Build e Deploy
+## 7. Automações e Regras de Negócio de E-mail / Rastreio
+
+### A. Fluxo de Sincronização de Pedidos Shopify
+1. **Cron Job em Background (`/api/cron/sync-shopify`)**:
+   - Conecta na API REST da Shopify (`orders.json?status=any&financial_status=paid,pending`) para todas as lojas ativas na tabela `stores` através do helper `lib/shopifySyncHelper.ts`.
+   - Salva e atualiza pedidos no Supabase sem necessidade de acionamento manual.
+2. **Webhooks Shopify em Tempo Real (`/api/webhooks/shopify`)**:
+   - Processa notificações instantâneas nos tópicos `orders/create`, `orders/updated`, `orders/paid`.
+3. **Trigger Manual**: Botão "Sincronizar Shopify" no painel Admin.
+
+### B. Regra de Envio do Comprovante de Compra (Nota Fiscal)
+- **Janela de Espera de 2 Horas**:
+  - Quando um pedido é pago, o sistema grava o prazo `enviar_nota_em` para 2 horas após a compra.
+  - O cron agendado dispara o e-mail do Comprovante de Compra automaticamente após passadas as 2 horas.
+  - O intervalo de 2h pode ser configurado em `NOTA_DELAY_HORAS`.
+- **Disparo Manual**:
+  - O botão de disparo no Admin ignora o delay de 2 horas e envia imediatamente a nota fiscal para os pedidos pendentes elegíveis.
+
+### C. Regra de Envio de Código de Rastreio
+- **Disparo no Próximo Dia Útil**:
+  - O e-mail de rastreio **não é enviado no mesmo dia da compra**.
+  - O rastreio só é enviado se a **Nota Fiscal já tiver sido enviada previamente** (`nota_enviada === true`) e se a data do pedido for anterior ao dia de hoje (`criadoEmDiaAnterior === true`).
+
+---
+
+## 8. Procedimento de Build e Deploy
 
 **Compilação Local:**
 ```powershell
