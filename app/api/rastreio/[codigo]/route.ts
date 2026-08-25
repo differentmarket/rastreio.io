@@ -517,6 +517,7 @@ export async function GET(
         ativo: upsellEnabled,
         titulo: upsellTitle,
         descricao: upsellDescription,
+        cupom: upsellCoupon,
         link: upsellLink,
         imagem_url: upsellImageUrl,
       },
