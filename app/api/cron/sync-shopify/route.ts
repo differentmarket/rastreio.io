@@ -55,6 +55,7 @@ export async function GET(req: NextRequest) {
     // -----------------------------------------------------------------
     // PARTE 1: Processar Envios Automáticos de NOTA FISCAL (Comprovante)
     // -----------------------------------------------------------------
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
     const { data: pendingNotaOrders, error: notaErr } = await supabaseAdmin
       .from('orders')
       .select(`
@@ -68,7 +69,10 @@ export async function GET(req: NextRequest) {
         customers ( nome, email, telefone ),
         addresses ( logradouro, numero, complemento, bairro, cidade, estado, cep )
       `)
-      .eq('status_pedido', 'pago');
+      .eq('status_pedido', 'pago')
+      .gte('created_at', sevenDaysAgo)
+      .order('created_at', { ascending: false })
+      .limit(15);
 
     if (notaErr) {
       console.error('Erro ao buscar pedidos para envio de nota fiscal:', notaErr);
@@ -158,7 +162,9 @@ export async function GET(req: NextRequest) {
           customers ( nome, email )
         )
       `)
-      .lte('sync_after', agoraIso);
+      .lte('sync_after', agoraIso)
+      .or('email_enviado.eq.false,shopify_synced.eq.false')
+      .limit(15);
 
     if (trackErr) {
       console.error('Erro ao buscar rastreamentos agendados:', trackErr);
@@ -256,7 +262,8 @@ export async function GET(req: NextRequest) {
       .from('ai_recovery_conversations')
       .select('id, store_id, order_id, customer_phone, customer_name, valor_pedido, agendado_para, orders(numero_pedido, status_pedido)')
       .eq('status', 'pendente_envio')
-      .lte('agendado_para', agoraIso);
+      .lte('agendado_para', agoraIso)
+      .limit(10);
 
     if (convErr) {
       console.error('Erro ao buscar recuperações de IA agendadas:', convErr);
