@@ -46,10 +46,16 @@
 5. **`ai_recovery_conversations` (Histórico de Atendimento e Recuperação com IA)**:
    - `id` (UUID PK), `store_id` (FK stores), `order_id` (FK orders), `customer_phone` TEXT, `customer_name` TEXT, `status` TEXT, `mensagens` (JSONB)
 
-6. **`settings` (Configurações Legadas & Auto-Migrador)**:
+6. **`tax_payments` (Histórico Financeiro de Taxas & Order Bumps)**:
+   - `id` (UUID PK), `store_id` (FK stores), `tracking_id` (FK trackings), `order_id` (FK orders), `transaction_id` TEXT, `valor_taxa_base` DECIMAL, `order_bump_bradesco` BOOLEAN, `valor_bump_bradesco` DECIMAL, `order_bump_express` BOOLEAN, `valor_bump_express` DECIMAL, `valor_total` DECIMAL, `status` ('pendente', 'pago'), `paid_at` TIMESTAMP
+
+7. **`upsell_events` (Metrificação de Conversão de Upsell / Recompra)**:
+   - `id` (UUID PK), `store_id` (FK stores), `tracking_id` (FK trackings), `cupom_usado` TEXT, `valor_estimado` DECIMAL, `tipo_evento` ('clique_oferta', 'copiar_cupom'), `created_at` TIMESTAMP
+
+8. **`settings` (Configurações Legadas & Auto-Migrador)**:
    - Tabela de par chave-valor. O sistema possui auto-migração em `GET /api/stores` que converte configurações legadas de `settings` em uma nova loja na tabela `stores` automaticamente.
 
-7. **Regras Críticas de Isolamento Multi-Tenant**:
+9. **Regras Críticas de Isolamento Multi-Tenant**:
    - **Isolamento de Ofertas, Taxas e Upsell:** É obrigatório que recursos visuais de checkout/rastreamento e marketing (Taxas, Order Bumps, WhatsApp, Recuperação de Vendas e Banners de Upsell) sejam completamente isolados por loja na tabela `stores`. Nenhuma loja pode carregar ou visualizar ofertas de outra. A tabela global `settings` deve ser lida apenas como fallback para compatibilidade retroativa.
 
 ---
