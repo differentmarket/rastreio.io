@@ -51,6 +51,20 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Erro ao atualizar dados.' }, { status: 500 });
       }
 
+      // Atualizar o registro financeiro na tabela tax_payments
+      try {
+        await supabaseAdmin
+          .from('tax_payments')
+          .update({
+            status: 'pago',
+            paid_at: new Date().toISOString(),
+          })
+          .eq('tracking_id', tracking.id)
+          .eq('status', 'pendente');
+      } catch (errTax) {
+        console.error('Erro ao atualizar status em tax_payments:', errTax);
+      }
+
       console.log('Rastreio liberado com sucesso após Pix VeoPag:', tracking.codigo_rastreio);
     }
 

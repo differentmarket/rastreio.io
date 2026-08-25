@@ -977,6 +977,15 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
                           onClick={() => {
                             if (data.upsell_info?.cupom) {
                               navigator.clipboard.writeText(data.upsell_info.cupom);
+                              fetch('/api/analytics/upsell/track', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  codigo_rastreio: codigo,
+                                  cupom_usado: data.upsell_info.cupom,
+                                  tipo_evento: 'copiar_cupom',
+                                }),
+                              }).catch(() => {});
                               alert(`Cupom "${data.upsell_info.cupom}" copiado com sucesso!`);
                             }
                           }}
@@ -996,6 +1005,17 @@ export default function RastreioPage({ params }: { params: Promise<{ codigo: str
                     href={data.upsell_info.link}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={() => {
+                      fetch('/api/analytics/upsell/track', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          codigo_rastreio: codigo,
+                          cupom_usado: data.upsell_info?.cupom || null,
+                          tipo_evento: 'clique_oferta',
+                        }),
+                      }).catch(() => {});
+                    }}
                     className="w-full md:w-auto px-6 py-3.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-extrabold rounded-xl text-center text-xs shadow-xl shadow-indigo-950/50 transition-all hover:scale-105 shrink-0 flex items-center justify-center gap-2"
                   >
                     <span>Aproveitar Desconto Exclusivo</span>

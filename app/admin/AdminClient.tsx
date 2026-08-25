@@ -7,7 +7,7 @@ import {
   MapPin, User, FileText, CheckCircle, RefreshCw, PlusCircle, ArrowLeft, Clock,
   Send, CheckCheck, Mail, AlertTriangle, ShoppingBag, Download, Inbox,
   RotateCcw, Store, Zap, ArrowRight, ExternalLink, CheckCircle2, XCircle, Building2, Users, Globe,
-  BarChart3, Bot, Sparkles, MessageSquare, Palette, Pencil, Trash2, X, Link, Plus,
+  BarChart3, Bot, Sparkles, MessageSquare, Palette, Pencil, Trash2, X, Link, Plus, DollarSign, ShieldCheck, CreditCard,
 } from 'lucide-react';
 
 // ─────────────── Types ───────────────
@@ -168,6 +168,27 @@ export default function AdminClient() {
 
   // Store Members (Contas de Lojistas)
   const [storeMembers, setStoreMembers] = useState<any[]>([]);
+
+  // Analytics de Taxas & Order Bumps
+  const [taxAnalytics, setTaxAnalytics] = useState<any | null>(null);
+  const [loadingTaxAnalytics, setLoadingTaxAnalytics] = useState(false);
+
+  const fetchTaxAnalytics = async () => {
+    setLoadingTaxAnalytics(true);
+    try {
+      const storeIdParam = activeStore?.id || selectedStoreId;
+      const queryParam = storeIdParam && storeIdParam !== 'all' ? `?store_id=${storeIdParam}` : '';
+      const res = await fetch(`/api/analytics/taxas${queryParam}`, { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setTaxAnalytics(data);
+      }
+    } catch {
+      /* silent */
+    } finally {
+      setLoadingTaxAnalytics(false);
+    }
+  };
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [invitingMember, setInvitingMember] = useState(false);
@@ -717,11 +738,13 @@ export default function AdminClient() {
   useEffect(() => {
     if (session && activeTab === 'settings') fetchSettings();
     if (session && activeTab === 'fila') fetchEmailQueue();
+    if (session && activeTab === 'analytics') fetchTaxAnalytics();
     if (session && activeTab === 'members' && activeStore?.id) fetchStoreMembers(activeStore.id);
   }, [session, activeTab, activeStore?.id]);
 
   useEffect(() => {
     fetchSettings();
+    fetchTaxAnalytics();
   }, [activeStore]);
 
   // Polling automático em tempo real (10s) sem recarregar a página
@@ -1847,6 +1870,7 @@ export default function AdminClient() {
                     onClick={() => {
                       setActiveTab(key as any);
                       if (key === 'ai_agent') fetchAiConversations();
+                      if (key === 'analytics') fetchTaxAnalytics();
                     }}
                     className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                       activeTab === key
@@ -2591,51 +2615,170 @@ export default function AdminClient() {
       {activeTab === 'analytics' && (
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           <div className="max-w-5xl mx-auto space-y-6">
-            {/* Header de Métricas Operacionais */}
+
+            {/* Header de Métricas Financeiras & Conversão */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-indigo-400" />
+                  Metrificação Financeira & Analytics de Conversão
+                </h3>
+                <p className="text-xs text-slate-400">Faturamento de Taxas, Order Bumps e Conversões de Upsell no Rastreio</p>
+              </div>
+              <button
+                onClick={fetchTaxAnalytics}
+                disabled={loadingTaxAnalytics}
+                className="py-2 px-3 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl text-xs font-bold text-slate-300 flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-indigo-400 ${loadingTaxAnalytics ? 'animate-spin' : ''}`} />
+                Atualizar Métricas
+              </button>
+            </div>
+
+            {/* Grid 1: KPI Cards Financeiros de Taxas, Bumps e Upsells */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
-                  <Clock className="w-6 h-6" />
+              <div className="bg-slate-900 border border-emerald-500/30 rounded-2xl p-5 shadow-xl flex items-center gap-4 bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/20">
+                <div className="w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                  <DollarSign className="w-6 h-6" />
                 </div>
-                <div>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Tempo Médio Entrega</p>
-                  <p className="text-xl font-extrabold text-white mt-0.5">3.8 Dias</p>
-                  <p className="text-[10px] text-emerald-400 font-semibold mt-0.5">↓ 12% mais rápido</p>
-                </div>
-              </div>
-
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-                  <CheckCircle2 className="w-6 h-6" />
-                </div>
-                <div>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Taxa de Sucesso</p>
-                  <p className="text-xl font-extrabold text-white mt-0.5">97.8%</p>
-                  <p className="text-[10px] text-emerald-400 font-semibold mt-0.5">Sem extravios este mês</p>
+                <div className="min-w-0">
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Faturamento em Taxas</p>
+                  <p className="text-xl font-extrabold text-emerald-400 mt-0.5 truncate">
+                    R$ {taxAnalytics?.metrics?.faturamentoTotal?.toFixed(2) || '0.00'}
+                  </p>
+                  <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                    {taxAnalytics?.metrics?.qtdTaxasPagas || 0} de {taxAnalytics?.metrics?.qtdTaxasGeradas || 0} taxas pagas
+                  </p>
                 </div>
               </div>
 
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-                  <AlertTriangle className="w-6 h-6" />
+              <div className="bg-slate-900 border border-indigo-500/30 rounded-2xl p-5 shadow-xl flex items-center gap-4 bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/20">
+                <div className="w-12 h-12 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+                  <ShieldCheck className="w-6 h-6" />
                 </div>
-                <div>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Retenção / Atenção</p>
-                  <p className="text-xl font-extrabold text-white mt-0.5">2 Pedidos</p>
-                  <p className="text-[10px] text-amber-400 font-semibold mt-0.5">Aguardando retentativa</p>
+                <div className="min-w-0">
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Order Bump Bradesco</p>
+                  <p className="text-xl font-extrabold text-indigo-300 mt-0.5 truncate">
+                    R$ {taxAnalytics?.metrics?.bradesco?.faturamento?.toFixed(2) || '0.00'}
+                  </p>
+                  <p className="text-[10px] text-indigo-400 font-semibold mt-0.5">
+                    {taxAnalytics?.metrics?.bradesco?.qtd || 0} vendas de seguro
+                  </p>
                 </div>
               </div>
 
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400">
-                  <Bot className="w-6 h-6" />
+              <div className="bg-slate-900 border border-purple-500/30 rounded-2xl p-5 shadow-xl flex items-center gap-4 bg-gradient-to-br from-slate-900 via-slate-900 to-purple-950/20">
+                <div className="w-12 h-12 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0">
+                  <Zap className="w-6 h-6" />
                 </div>
-                <div>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Vendas Salvas pela IA</p>
-                  <p className="text-xl font-extrabold text-white mt-0.5">14 Recuperações</p>
-                  <p className="text-[10px] text-violet-400 font-semibold mt-0.5">via Evolution WhatsApp</p>
+                <div className="min-w-0">
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Order Bump Express</p>
+                  <p className="text-xl font-extrabold text-purple-300 mt-0.5 truncate">
+                    R$ {taxAnalytics?.metrics?.express?.faturamento?.toFixed(2) || '0.00'}
+                  </p>
+                  <p className="text-[10px] text-purple-400 font-semibold mt-0.5">
+                    {taxAnalytics?.metrics?.express?.qtd || 0} fretes express
+                  </p>
                 </div>
               </div>
+
+              <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-5 shadow-xl flex items-center gap-4 bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/20">
+                <div className="w-12 h-12 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                  <ShoppingBag className="w-6 h-6" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Vendas & Conversão Upsell</p>
+                  <p className="text-xl font-extrabold text-amber-300 mt-0.5 truncate">
+                    {taxAnalytics?.metrics?.upsell?.cliquesOferta || 0} Cliques
+                  </p>
+                  <p className="text-[10px] text-amber-400 font-semibold mt-0.5">
+                    {taxAnalytics?.metrics?.upsell?.cuponsCopiados || 0} cupons copiados
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Tabela de Transações Recentes de Taxas e Bumps */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl space-y-4 p-5">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h4 className="text-sm font-extrabold text-white flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-emerald-400" />
+                  Histórico de Transações em Tempo Real
+                </h4>
+                <span className="text-[10px] font-mono text-slate-400">
+                  Take Rate Bumps: <strong className="text-indigo-400">{taxAnalytics?.metrics?.takeRate || 0}%</strong>
+                </span>
+              </div>
+
+              {loadingTaxAnalytics ? (
+                <div className="py-12 text-center text-slate-500 flex flex-col items-center">
+                  <Loader2 className="w-5 h-5 animate-spin text-indigo-400 mb-2" />
+                  <span className="text-xs">Carregando transações...</span>
+                </div>
+              ) : !taxAnalytics?.recentTransactions || taxAnalytics.recentTransactions.length === 0 ? (
+                <div className="py-12 text-center text-slate-500 text-xs">
+                  Nenhuma transação de taxa ou order bump registrada até o momento.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        <th className="py-2.5 px-3">Transação</th>
+                        <th className="py-2.5 px-3">Taxa Base</th>
+                        <th className="py-2.5 px-3">Order Bumps</th>
+                        <th className="py-2.5 px-3">Valor Total</th>
+                        <th className="py-2.5 px-3">Status</th>
+                        <th className="py-2.5 px-3 text-right">Data</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 font-medium">
+                      {taxAnalytics.recentTransactions.map((tx: any) => (
+                        <tr key={tx.id} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="py-3 px-3">
+                            <span className="font-mono font-bold text-slate-200">{tx.transaction_id || tx.id.substring(0, 8)}</span>
+                          </td>
+                          <td className="py-3 px-3 text-slate-300">
+                            R$ {parseFloat(tx.valor_taxa_base || 27.90).toFixed(2)}
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {tx.order_bump_bradesco && (
+                                <span className="px-2 py-0.5 bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-[10px] rounded-full font-bold">
+                                  🛡️ Seguro Bradesco (+R$ {parseFloat(tx.valor_bump_bradesco || 14.76).toFixed(2)})
+                                </span>
+                              )}
+                              {tx.order_bump_express && (
+                                <span className="px-2 py-0.5 bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[10px] rounded-full font-bold">
+                                  🚀 Express (+R$ {parseFloat(tx.valor_bump_express || 9.91).toFixed(2)})
+                                </span>
+                              )}
+                              {!tx.order_bump_bradesco && !tx.order_bump_express && (
+                                <span className="text-slate-500 text-[11px]">—</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 font-bold text-emerald-400">
+                            R$ {parseFloat(tx.valor_total || 0).toFixed(2)}
+                          </td>
+                          <td className="py-3 px-3">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                              tx.status === 'pago' 
+                                ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-400' 
+                                : 'bg-amber-500/15 border border-amber-500/30 text-amber-400'
+                            }`}>
+                              {tx.status === 'pago' ? 'PAGO' : 'PENDENTE'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-right text-[11px] text-slate-400">
+                            {new Date(tx.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             {/* Painel do Agente de IA para Recuperação de Vendas */}

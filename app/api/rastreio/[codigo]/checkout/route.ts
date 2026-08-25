@@ -147,10 +147,32 @@ export async function POST(
     // Se a integração da VeoPag não estiver ativa ou faltar credenciais, fazemos a simulação de sandbox/mock
     const isMock = !veopagEnabled || !clientId || !clientSecret;
 
+    // Gravar intenção de pagamento em tax_payments
+    const isBradesco = !!(bradesco_seguros && bradescoBumpEnabled);
+    const isExpress = !!(entrega_express && expressBumpEnabled);
+    const targetStore = store?.id && store.id !== 'default-store' ? store.id : null;
+
     if (isMock) {
       // Simulação de Pix de Sandbox
       const mockTxId = `mock-tx-${tracking.id}-${Date.now()}`;
       const mockQrcode = `00020126580014br.gov.bcb.pix0136mock-tx-${tracking.id}5204000053039865802BR5909SIMULADO6008SAOPAULO62070503***6304MOCK`;
+
+      try {
+        await supabaseAdmin.from('tax_payments').insert({
+          store_id: targetStore,
+          tracking_id: tracking.id,
+          transaction_id: mockTxId,
+          valor_taxa_base: baseValor,
+          order_bump_bradesco: isBradesco,
+          valor_bump_bradesco: isBradesco ? bradescoBumpValor : 0,
+          order_bump_express: isExpress,
+          valor_bump_express: isExpress ? expressBumpValor : 0,
+          valor_total: valorTotal,
+          status: 'pendente',
+        });
+      } catch (e) {
+        console.error('Erro ao gravar tax_payments (mock):', e);
+      }
 
       return NextResponse.json({
         success: true,
@@ -226,6 +248,23 @@ export async function POST(
       console.error('Resposta da VeoPag sem QR Code válido:', depositData);
       const errMsg = depositData.message || depositData.error || depositData.msg || 'Falha ao obter QR Code da adquirente.';
       return NextResponse.json({ error: errMsg }, { status: 502 });
+    }
+
+    try {
+      await supabaseAdmin.from('tax_payments').insert({
+        store_id: targetStore,
+        tracking_id: tracking.id,
+        transaction_id: String(transactionId),
+        valor_taxa_base: baseValor,
+        order_bump_bradesco: isBradesco,
+        valor_bump_bradesco: isBradesco ? bradescoBumpValor : 0,
+        order_bump_express: isExpress,
+        valor_bump_express: isExpress ? expressBumpValor : 0,
+        valor_total: amount,
+        status: 'pendente',
+      });
+    } catch (e) {
+      console.error('Erro ao gravar tax_payments (real):', e);
     }
 
     return NextResponse.json({
