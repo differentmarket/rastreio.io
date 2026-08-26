@@ -69,8 +69,8 @@ export async function executarSincronizacaoShopify(storeIdParam?: string, onlyRe
 
       const cleanDomain = config.domain.replace(/^https?:\/\//, '');
       const threeDaysAgoIso = new Date(Date.now() - 72 * 3600 * 1000).toISOString();
-      const dateFilter = onlyRecent ? `&updated_at_min=${threeDaysAgoIso}&limit=40` : '&limit=250';
-      let nextUrl: string | null = `https://${cleanDomain}/admin/api/2024-10/orders.json?status=any&financial_status=paid,pending&order=created_at+asc${dateFilter}&fields=id,order_number,financial_status,fulfillment_status,total_price,created_at,customer,shipping_address,line_items,note_attributes`;
+      const dateFilter = onlyRecent ? `&updated_at_min=${threeDaysAgoIso}&limit=50` : '&limit=250';
+      let nextUrl: string | null = `https://${cleanDomain}/admin/api/2024-10/orders.json?status=any&financial_status=paid,pending&order=created_at+desc${dateFilter}&fields=id,order_number,financial_status,fulfillment_status,total_price,created_at,customer,shipping_address,line_items,note_attributes`;
 
       try {
         while (nextUrl) {
