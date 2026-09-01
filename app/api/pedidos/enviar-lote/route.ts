@@ -204,12 +204,11 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const notaJaEnviada     = order.raw_payload?.nota_enviada === true;
+      let currentNotaJaEnviada = order.raw_payload?.nota_enviada === true;
       const rastreioJaEnviado  = trk?.email_enviado === true;
       const criadoEmDiaAnterior = isAnteriorAHoje(order.created_at);
 
-      const podeEnviarNota = !notaJaEnviada && (isManualTrigger || passouDelayHoras(order.created_at, notaDelayHoras));
-      const podeEnviarRastreio = !rastreioJaEnviado && criadoEmDiaAnterior && notaJaEnviada;
+      const podeEnviarNota = !currentNotaJaEnviada && (isManualTrigger || passouDelayHoras(order.created_at, notaDelayHoras));
 
       // Extrair método de envio do raw_payload
       const shippingMethod = order.raw_payload?.shipping_lines?.[0]?.title || null;
@@ -217,6 +216,40 @@ export async function POST(req: NextRequest) {
       try {
         const storeInfo: any = order.store_id ? storesMap.get(order.store_id) : null;
         const lojaNomeEspecifico = storeInfo?.empresa_nome || storeInfo?.nome_loja || empresaNome;
+
+        // ── Envio de Nota de Compra ─────────────────────────────
+        if ((tipo === 'nota' || tipo === 'ambos') && podeEnviarNota) {
+          const htmlNota = buildNotaHtml({ order, cust: custObj, addr, cfg, storeInfo });
+
+          if (resendApiKey) {
+            const r = await fetch('https://api.resend.com/emails', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                from: fromEmail,
+                to: custObj.email,
+                subject: `Comprovante de Compra — Pedido #${order.numero_pedido}`,
+                html: htmlNota,
+              }),
+            });
+            if (!r.ok) {
+              const errData = await r.json().catch(() => ({}));
+              throw new Error(errData.message || 'Falha ao comunicar com a API do Resend na nota fiscal.');
+            }
+          }
+
+          await supabaseAdmin.from('orders').update({
+            raw_payload: {
+              ...(order as any).raw_payload,
+              nota_enviada: true,
+              nota_enviada_em: new Date().toISOString(),
+            },
+          }).eq('id', order.id);
+
+          currentNotaJaEnviada = true;
+        }
+
+        const podeEnviarRastreio = !rastreioJaEnviado && criadoEmDiaAnterior && currentNotaJaEnviada;
 
         // ── Envio de Rastreio ───────────────────────────────────
         if ((tipo === 'rastreio' || tipo === 'ambos') && podeEnviarRastreio && trk?.codigo_rastreio) {
@@ -260,35 +293,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // ── Envio de Nota de Compra ─────────────────────────────
-        if ((tipo === 'nota' || tipo === 'ambos') && podeEnviarNota) {
-          const htmlNota = buildNotaHtml({ order, cust: custObj, addr, cfg, storeInfo });
 
-          if (resendApiKey) {
-            const r = await fetch('https://api.resend.com/emails', {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                from: fromEmail,
-                to: custObj.email,
-                subject: `Comprovante de Compra — Pedido #${order.numero_pedido}`,
-                html: htmlNota,
-              }),
-            });
-            if (!r.ok) {
-              const errData = await r.json().catch(() => ({}));
-              throw new Error(errData.message || 'Falha ao comunicar com a API do Resend na nota fiscal.');
-            }
-          }
-
-          await supabaseAdmin.from('orders').update({
-            raw_payload: {
-              ...(order as any).raw_payload,
-              nota_enviada: true,
-              nota_enviada_em: new Date().toISOString(),
-            },
-          }).eq('id', order.id);
-        }
 
         disparados++;
       } catch {
