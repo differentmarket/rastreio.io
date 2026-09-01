@@ -194,6 +194,11 @@ export async function POST(req: NextRequest) {
 
         if (newTrk) {
           trk = newTrk;
+          
+          // Disparar Webhook para o Gateway/Automação
+          const { sendTrackingToGateway } = await import('@/lib/gatewayWebhook');
+          await sendTrackingToGateway(order.id, novoCodigo);
+
         } else {
           trk = { id: null, codigo_rastreio: novoCodigo, status: 'postado', email_enviado: false, shopify_synced: false };
         }
@@ -219,7 +224,7 @@ export async function POST(req: NextRequest) {
           const htmlRastreio = buildRastreioHtml({ order, cust: custObj, trk, trackingUrl, empresaNome: lojaNomeEspecifico, storeInfo });
 
           if (resendApiKey) {
-            await fetch('https://api.resend.com/emails', {
+            const r = await fetch('https://api.resend.com/emails', {
               method: 'POST',
               headers: { Authorization: `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -229,6 +234,10 @@ export async function POST(req: NextRequest) {
                 html: htmlRastreio,
               }),
             });
+            if (!r.ok) {
+              const errData = await r.json().catch(() => ({}));
+              throw new Error(errData.message || 'Falha ao comunicar com a API do Resend no rastreio.');
+            }
           }
 
           // Fulfilment na Shopify com carrier detectado e storeId
@@ -256,7 +265,7 @@ export async function POST(req: NextRequest) {
           const htmlNota = buildNotaHtml({ order, cust: custObj, addr, cfg, storeInfo });
 
           if (resendApiKey) {
-            await fetch('https://api.resend.com/emails', {
+            const r = await fetch('https://api.resend.com/emails', {
               method: 'POST',
               headers: { Authorization: `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -266,6 +275,10 @@ export async function POST(req: NextRequest) {
                 html: htmlNota,
               }),
             });
+            if (!r.ok) {
+              const errData = await r.json().catch(() => ({}));
+              throw new Error(errData.message || 'Falha ao comunicar com a API do Resend na nota fiscal.');
+            }
           }
 
           await supabaseAdmin.from('orders').update({

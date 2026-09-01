@@ -63,6 +63,8 @@ export async function GET(req: NextRequest) {
       NOTA_DELAY_HORAS: '2',
       RASTREIO_PROXIMO_DIA_UTIL: 'true',
       AUTOMACAO_ATIVA: 'false',
+      GATEWAY_WEBHOOK_URL: '',
+      GATEWAY_WEBHOOK_SECRET: '',
     };
 
     settings?.forEach((item) => {

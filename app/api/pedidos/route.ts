@@ -228,6 +228,10 @@ export async function POST(req: NextRequest) {
 
     if (trackErr) throw trackErr;
 
+    // 5. Disparar Webhook para o Gateway/Automação
+    const { sendTrackingToGateway } = await import('@/lib/gatewayWebhook');
+    await sendTrackingToGateway(finalOrderId, codigo_rastreio.toUpperCase().trim());
+
     return NextResponse.json({ success: true, tracking });
   } catch (err: any) {
     console.error('Erro ao cadastrar/vincular rastreio:', err);

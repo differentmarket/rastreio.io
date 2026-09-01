@@ -370,6 +370,10 @@ export async function executarSincronizacaoShopify(storeIdParam?: string, onlyRe
               },
             ],
           });
+
+          // Disparar Webhook para o Gateway/Automação
+          const { sendTrackingToGateway } = await import('./gatewayWebhook');
+          await sendTrackingToGateway(orderDbId, codigo);
         }
       } catch (orderLoopErr: any) {
         todosLogs.push({

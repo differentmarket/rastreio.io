@@ -261,6 +261,8 @@ export default function AdminClient() {
   const [resendApiKey, setResendApiKey] = useState('');
   const [resendFromEmail, setResendFromEmail] = useState('');
   const [nextPublicAppUrl, setNextPublicAppUrl] = useState('');
+  const [gatewayWebhookUrl, setGatewayWebhookUrl] = useState('');
+  const [gatewayWebhookSecret, setGatewayWebhookSecret] = useState('');
   const [notaDelayHoras, setNotaDelayHoras] = useState('2');
   
   // Taxa de Reenvio / Despacho Postal
@@ -639,6 +641,8 @@ export default function AdminClient() {
       setResendApiKey(data.RESEND_API_KEY || '');
       setResendFromEmail(data.RESEND_FROM_EMAIL || '');
       setNextPublicAppUrl(data.NEXT_PUBLIC_APP_URL || '');
+      setGatewayWebhookUrl(data.GATEWAY_WEBHOOK_URL || '');
+      setGatewayWebhookSecret(data.GATEWAY_WEBHOOK_SECRET || '');
       setNotaDelayHoras(data.NOTA_DELAY_HORAS || '2');
       
       setTaxaEnabled(data.TAXA_ENABLED !== 'false');
@@ -1167,6 +1171,8 @@ export default function AdminClient() {
           RESEND_API_KEY: resendApiKey,
           RESEND_FROM_EMAIL: resendFromEmail,
           NEXT_PUBLIC_APP_URL: nextPublicAppUrl,
+          GATEWAY_WEBHOOK_URL: gatewayWebhookUrl,
+          GATEWAY_WEBHOOK_SECRET: gatewayWebhookSecret,
           NOTA_DELAY_HORAS: notaDelayHoras,
           TAXA_ENABLED: String(taxaEnabled),
           TAXA_DIAS_TENTATIVAS: taxaDiasTentativas,
@@ -2934,6 +2940,21 @@ export default function AdminClient() {
                       <SettingsInput label="Estado" value={empresaEstado} onChange={setEmpresaEstado} placeholder="SP" />
                       <SettingsInput label="CEP" value={empresaCep} onChange={setEmpresaCep} placeholder="01000-000" />
                     </div>
+                  </div>
+                </div>
+
+                {/* ═══════ CARD 4.5: Webhook do Gateway ═══════ */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                  <div className="px-6 py-4 bg-gradient-to-r from-orange-600/10 to-amber-600/5 border-b border-slate-800 flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-orange-500/15 text-orange-400 border border-orange-500/20"><Globe className="w-5 h-5" /></div>
+                    <div>
+                      <h3 className="text-sm font-extrabold text-white">Integração com Gateway (Webhook)</h3>
+                      <p className="text-[10px] text-slate-400">Envie o código de rastreio automaticamente via API.</p>
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <SettingsInput label="URL do Webhook / API" value={gatewayWebhookUrl} onChange={setGatewayWebhookUrl} placeholder="https://api.seugateway.com/webhook" hint="Endpoint que receberá o POST com os dados de rastreio." />
+                    <SettingsInput label="Secret do Webhook (Opcional)" value={gatewayWebhookSecret} onChange={setGatewayWebhookSecret} placeholder="Seu Token Secreto" type="password" mono hint="Enviado no header Authorization." />
                   </div>
                 </div>
 
