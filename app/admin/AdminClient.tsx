@@ -961,6 +961,7 @@ export default function AdminClient() {
 
       let okCount = 0;
       let errCount = 0;
+      let lastErrorMessage = '';
 
       for (let i = 0; i < targetItems.length; i++) {
         const item = targetItems[i];
@@ -988,16 +989,26 @@ export default function AdminClient() {
             okCount++;
           } else {
             errCount++;
+            if (data.ultimoErro || data.error) {
+              lastErrorMessage = data.ultimoErro || data.error;
+            }
           }
-        } catch {
+        } catch (fetchErr: any) {
           errCount++;
+          lastErrorMessage = fetchErr?.message || 'Erro de rede';
         }
 
         // Atualiza a tabela na tela em tempo real a cada envio
         fetchEmailQueue();
       }
 
-      setBatchResult(`🎉 Concluído! ${okCount} e-mails de ${tipoNotificacao === 'nota' ? 'Nota Fiscal' : 'Notificação'} enviados com sucesso de ${targetItems.length} elegíveis (${errCount} erros).`);
+      if (errCount > 0 && okCount === 0) {
+        setBatchResult(`⚠️ Nenhum e-mail enviado (${errCount} erros). Motivo: ${lastErrorMessage || 'Verifique as configurações do Resend'}`);
+      } else if (errCount > 0) {
+        setBatchResult(`🎉 ${okCount} e-mails enviados com sucesso (${errCount} erros). Último erro: ${lastErrorMessage}`);
+      } else {
+        setBatchResult(`🎉 Concluído com sucesso! Todos os ${okCount} e-mails foram enviados.`);
+      }
     } catch (err: any) {
       setBatchResult(`❌ ${err.message || 'Erro no envio em lote.'}`);
     } finally {

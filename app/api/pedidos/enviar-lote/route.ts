@@ -170,6 +170,8 @@ export async function POST(req: NextRequest) {
     let pulados = orders.length - targetOrders.length;
     let erros = 0;
 
+    let ultimoErro = '';
+
     for (const order of targetOrders) {
       const cust = Array.isArray(order.customers) ? order.customers[0] : order.customers;
       const custEmail = cust?.email || order.raw_payload?.customer?.email || order.raw_payload?.email || order.raw_payload?.contact_email || '';
@@ -298,11 +300,11 @@ export async function POST(req: NextRequest) {
           }
         }
 
-
-
         disparados++;
-      } catch {
+      } catch (loopErr: any) {
         erros++;
+        ultimoErro = loopErr?.message || 'Erro desconhecido ao enviar email';
+        console.error(`[ENVIAR LOTE] Erro no pedido #${order.numero_pedido}:`, loopErr);
       }
     }
 
@@ -313,6 +315,7 @@ export async function POST(req: NextRequest) {
       disparados,
       pulados,
       erros,
+      ultimoErro: ultimoErro || null,
       periodo: periodo || 'todos',
       tipoNotificacao: tipo,
       regras: {
