@@ -67,49 +67,52 @@ export async function POST(req: NextRequest) {
 
     const storeIdParam = body.store_id || null;
 
-    // ── Buscar pedidos (Apenas pedidos PAGOS são elegíveis para e-mails) ──
+    // ── Buscar pedidos (Pedidos elegíveis para envio) ──
     let query = supabaseAdmin.from('orders').select(`
       id, store_id, shopify_order_id, numero_pedido, status_pedido, valor_total,
       itens, raw_payload, created_at,
       customers ( nome, email ),
       addresses ( logradouro, numero, complemento, bairro, cidade, estado, cep ),
       trackings ( id, codigo_rastreio, status, email_enviado, shopify_synced )
-    `).eq('status_pedido', 'pago');
+    `);
 
-    if (storeIdParam && storeIdParam !== 'all' && storeIdParam !== 'default-store') {
-      query = query.eq('store_id', storeIdParam);
-    }
-
-    const now = new Date();
     if (orderId) {
       query = query.eq('id', orderId);
-    } else if (periodo === 'hoje') {
-      const todayStart = getStartOfDay(now).toISOString();
-      query = query.gte('created_at', todayStart);
-    } else if (periodo === 'ontem') {
-      const yesterdayStart = getStartOfDay(new Date(now.getTime() - 86400000)).toISOString();
-      const todayStart = getStartOfDay(now).toISOString();
-      query = query.gte('created_at', yesterdayStart).lt('created_at', todayStart);
-    } else if (periodo === 'semana') {
-      const weekAgo = new Date(now.getTime() - 7 * 86400000).toISOString();
-      query = query.gte('created_at', weekAgo);
-    } else if (periodo === 'mes') {
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-      query = query.gte('created_at', monthStart);
-    } else if (periodo === 'exceto_hoje') {
-      // Busca pedidos criados antes do dia de hoje.
-      const todayStart = getStartOfDay(now).toISOString();
-      const twoHoursAgo = new Date(now.getTime() - 2 * 3600 * 1000).toISOString();
+    } else {
+      query = query.in('status_pedido', ['pago', 'separacao', 'enviado', 'entregue']);
+      if (storeIdParam && storeIdParam !== 'all' && storeIdParam !== 'default-store') {
+        query = query.eq('store_id', storeIdParam);
+      }
 
-      const { data: checkOrders } = await supabaseAdmin.from('orders').select('id').lt('created_at', todayStart).limit(1);
-      if (checkOrders && checkOrders.length > 0) {
-        query = query.lt('created_at', todayStart);
-      } else {
-        const { data: check2h } = await supabaseAdmin.from('orders').select('id').lt('created_at', twoHoursAgo).limit(1);
-        if (check2h && check2h.length > 0) {
-          query = query.lt('created_at', twoHoursAgo);
+      const now = new Date();
+      if (periodo === 'hoje') {
+        const todayStart = getStartOfDay(now).toISOString();
+        query = query.gte('created_at', todayStart);
+      } else if (periodo === 'ontem') {
+        const yesterdayStart = getStartOfDay(new Date(now.getTime() - 86400000)).toISOString();
+        const todayStart = getStartOfDay(now).toISOString();
+        query = query.gte('created_at', yesterdayStart).lt('created_at', todayStart);
+      } else if (periodo === 'semana') {
+        const weekAgo = new Date(now.getTime() - 7 * 86400000).toISOString();
+        query = query.gte('created_at', weekAgo);
+      } else if (periodo === 'mes') {
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+        query = query.gte('created_at', monthStart);
+      } else if (periodo === 'exceto_hoje') {
+        // Busca pedidos criados antes do dia de hoje.
+        const todayStart = getStartOfDay(now).toISOString();
+        const twoHoursAgo = new Date(now.getTime() - 2 * 3600 * 1000).toISOString();
+
+        const { data: checkOrders } = await supabaseAdmin.from('orders').select('id').lt('created_at', todayStart).limit(1);
+        if (checkOrders && checkOrders.length > 0) {
+          query = query.lt('created_at', todayStart);
+        } else {
+          const { data: check2h } = await supabaseAdmin.from('orders').select('id').lt('created_at', twoHoursAgo).limit(1);
+          if (check2h && check2h.length > 0) {
+            query = query.lt('created_at', twoHoursAgo);
+          }
+          // Se nenhum order tem data antiga (pois foram todos sincronizados recentemente), busca sem restrição estrita de data
         }
-        // Se nenhum order tem data antiga (pois foram todos sincronizados recentemente), busca sem restrição estrita de data
       }
     }
 
@@ -120,15 +123,15 @@ export async function POST(req: NextRequest) {
 
     let orders = initialOrders || [];
 
-    // Fallback: Se o filtro por data exata (ex: 'ontem' ou 'exceto_hoje') não encontrou pedidos, busca todos os pedidos pagos
-    if (orders.length === 0 && (periodo === 'ontem' || periodo === 'exceto_hoje' || periodo === 'pendentes')) {
+    // Fallback: Se o filtro por data exata (ex: 'ontem' ou 'exceto_hoje') não encontrou pedidos, busca pedidos elegíveis
+    if (orders.length === 0 && !orderId && (periodo === 'ontem' || periodo === 'exceto_hoje' || periodo === 'pendentes')) {
       let fallbackQuery = supabaseAdmin.from('orders').select(`
         id, store_id, shopify_order_id, numero_pedido, status_pedido, valor_total,
         itens, raw_payload, created_at,
         customers ( nome, email ),
         addresses ( logradouro, numero, complemento, bairro, cidade, estado, cep ),
         trackings ( id, codigo_rastreio, status, email_enviado, shopify_synced )
-      `).eq('status_pedido', 'pago');
+      `).in('status_pedido', ['pago', 'separacao', 'enviado', 'entregue']);
 
       if (storeIdParam && storeIdParam !== 'all' && storeIdParam !== 'default-store') {
         fallbackQuery = fallbackQuery.eq('store_id', storeIdParam);
@@ -307,6 +310,14 @@ export async function POST(req: NextRequest) {
         erros++;
         ultimoErro = loopErr?.message || 'Erro desconhecido ao enviar email';
         console.error(`[ENVIAR LOTE] Erro no pedido #${order.numero_pedido}:`, loopErr);
+      }
+    }
+
+    if (disparados === 0 && !ultimoErro) {
+      if (orders.length === 0) {
+        ultimoErro = 'Pedido não encontrado no banco de dados.';
+      } else if (targetOrders.length === 0) {
+        ultimoErro = 'Pedido não elegível no momento (Rastreio exige D+1 da compra e Nota Fiscal enviada).';
       }
     }
 

@@ -985,7 +985,12 @@ export default function AdminClient() {
           const res = await fetch('/api/pedidos/enviar-lote', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ periodo, tipoNotificacao, orderId: item.id }),
+            body: JSON.stringify({ 
+              periodo, 
+              tipoNotificacao, 
+              orderId: item.id,
+              store_id: activeStore?.id 
+            }),
           });
           const data = await res.json();
           if (res.ok && data.disparados > 0) {
@@ -994,6 +999,8 @@ export default function AdminClient() {
             errCount++;
             if (data.ultimoErro || data.error) {
               lastErrorMessage = data.ultimoErro || data.error;
+            } else if (data.pulados > 0) {
+              lastErrorMessage = 'Pedido aguardando critérios de prazo (D+1).';
             }
           }
         } catch (fetchErr: any) {
@@ -1006,7 +1013,7 @@ export default function AdminClient() {
       }
 
       if (errCount > 0 && okCount === 0) {
-        setBatchResult(`⚠️ Nenhum e-mail enviado (${errCount} erros). Motivo: ${lastErrorMessage || 'Verifique as configurações do Resend'}`);
+        setBatchResult(`⚠️ Nenhum e-mail enviado (${errCount} erros). Motivo: ${lastErrorMessage || 'Pedidos não elegíveis ou erro de comunicação'}`);
       } else if (errCount > 0) {
         setBatchResult(`🎉 ${okCount} e-mails enviados com sucesso (${errCount} erros). Último erro: ${lastErrorMessage}`);
       } else {
