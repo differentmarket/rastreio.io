@@ -154,11 +154,14 @@ export async function POST(req: NextRequest) {
       // REGRA 1: Não pode enviar rastreio no mesmo dia da compra (criadoEmDiaAnterior === true)
       // REGRA 2: Não pode enviar rastreio sem a Nota Fiscal ter sido enviada antes (notaJaEnviada === true)
       const podeEnviarNota = !notaJaEnviada && (isManualTrigger || passouDelayHoras(o.created_at, notaDelayHoras));
+      // Para rastreio avulso: precisa que nota já tenha sido enviada antes
       const podeEnviarRastreio = !rastreioJaEnviado && criadoEmDiaAnterior && notaJaEnviada;
+      // Para modo 'ambos': pode incluir pedidos onde a nota vai ser enviada agora E o rastreio virá logo após (no mesmo ciclo)
+      const podeEnviarRastreioDepoisDaNota = !rastreioJaEnviado && criadoEmDiaAnterior && !notaJaEnviada && podeEnviarNota;
 
       if (tipo === 'rastreio') return podeEnviarRastreio;
       if (tipo === 'nota')     return podeEnviarNota;
-      return podeEnviarRastreio || podeEnviarNota;
+      return podeEnviarNota || podeEnviarRastreio || podeEnviarRastreioDepoisDaNota;
     });
 
     let disparados = 0;

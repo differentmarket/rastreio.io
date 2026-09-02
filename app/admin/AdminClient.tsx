@@ -936,9 +936,12 @@ export default function AdminClient() {
 
         // tipo === 'ambos'
         // Pode enviar Nota se não enviou, OU pode enviar Rastreio se respeitar as 2 regras
+        // OU pode enviar pedidos onde nota + rastreio serão enviados juntos no mesmo ciclo
         const podeEnviarNota = !notaJaEnviada;
         const podeEnviarRastreio = !item.trackings?.email_enviado && criadoEmDiaAnterior && notaJaEnviada;
-        return podeEnviarNota || podeEnviarRastreio;
+        // Pedidos de dias anteriores que ainda não têm nota e não têm rastreio: o backend enviará nota primeiro, depois rastreio
+        const podeEnviarAmbosJuntos = !notaJaEnviada && !item.trackings?.email_enviado && criadoEmDiaAnterior;
+        return podeEnviarNota || podeEnviarRastreio || podeEnviarAmbosJuntos;
       });
 
       if (targetItems.length === 0) {
