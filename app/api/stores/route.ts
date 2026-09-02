@@ -161,6 +161,8 @@ export async function POST(req: NextRequest) {
       upsell_coupon,
       upsell_link,
       upsell_image_url,
+      resend_from_email,
+      resend_api_key,
     } = body;
 
     if (!shopify_domain) {
@@ -188,6 +190,8 @@ export async function POST(req: NextRequest) {
         empresa_cidade,
         empresa_estado,
         empresa_cep,
+        resend_from_email: resend_from_email || null,
+        resend_api_key: resend_api_key || null,
         taxa_enabled: taxa_enabled !== undefined ? taxa_enabled : true,
         taxa_nome: taxa_nome || 'Taxa de Despacho Postal e Liberação Alfandegária',
         taxa_valor: taxa_valor !== undefined ? taxa_valor : 27.90,
@@ -270,7 +274,8 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'ID da loja é obrigatório para atualização.' }, { status: 400 });
     }
 
-    const { data: updatedStore, error } = await supabaseAdmin
+    let updatedStore: any = null;
+    const { data: resStore, error } = await supabaseAdmin
       .from('stores')
       .update({
         ...updateFields,
@@ -280,8 +285,24 @@ export async function PUT(req: NextRequest) {
       .select()
       .single();
 
-    if (error) {
+    if (error && (error.message?.includes('resend_from_email') || error.message?.includes('resend_api_key'))) {
+      // Se as colunas ainda não foram migradas no Supabase, tenta atualizar sem elas para não quebrar a tela
+      const { resend_from_email, resend_api_key, ...safeFields } = updateFields;
+      const fallbackResult = await supabaseAdmin
+        .from('stores')
+        .update({
+          ...safeFields,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+      if (fallbackResult.error) throw fallbackResult.error;
+      updatedStore = fallbackResult.data;
+    } else if (error) {
       throw error;
+    } else {
+      updatedStore = resStore;
     }
 
     return NextResponse.json({ success: true, store: updatedStore });

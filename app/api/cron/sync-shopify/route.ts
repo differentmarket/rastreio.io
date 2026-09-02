@@ -102,15 +102,18 @@ export async function GET(req: NextRequest) {
             try {
               const htmlNota = buildNotaHtml({ order, cust: customer, addr: address, cfg, storeInfo });
 
-              if (resendApiKey) {
+              const lojaFromEmail = storeInfo?.resend_from_email?.trim() || fromEmail;
+              const lojaResendApiKey = storeInfo?.resend_api_key?.trim() || resendApiKey;
+
+              if (lojaResendApiKey) {
                 const r = await fetch('https://api.resend.com/emails', {
                   method: 'POST',
                   headers: {
-                    'Authorization': `Bearer ${resendApiKey}`,
+                    'Authorization': `Bearer ${lojaResendApiKey}`,
                     'Content-Type': 'application/json',
                   },
                   body: JSON.stringify({
-                    from: fromEmail,
+                    from: lojaFromEmail,
                     to: customer.email,
                     subject: `Comprovante de Compra — Pedido #${order.numero_pedido}`,
                     html: htmlNota,
@@ -197,15 +200,18 @@ export async function GET(req: NextRequest) {
             const trackingUrl = `${appUrl}/rastreio/${tracking.codigo_rastreio}`;
             const htmlRastreio = buildRastreioHtml({ order: orderObj, cust: customer, trk: tracking, trackingUrl, empresaNome: lojaNomeEspecifico, storeInfo });
 
-            if (resendApiKey) {
+            const lojaFromEmail = storeInfo?.resend_from_email?.trim() || fromEmail;
+            const lojaResendApiKey = storeInfo?.resend_api_key?.trim() || resendApiKey;
+
+            if (lojaResendApiKey) {
               const r = await fetch('https://api.resend.com/emails', {
                 method: 'POST',
                 headers: {
-                  'Authorization': `Bearer ${resendApiKey}`,
+                  'Authorization': `Bearer ${lojaResendApiKey}`,
                   'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                  from: fromEmail,
+                  from: lojaFromEmail,
                   to: customer.email,
                   subject: `Pedido #${orderObj.numero_pedido} — Código de Rastreio`,
                   html: htmlRastreio,

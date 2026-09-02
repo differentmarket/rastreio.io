@@ -50,8 +50,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const cfg: Record<string, string> = {};
     settings?.forEach(s => { cfg[s.key] = s.value; });
 
-    const resendApiKey = cfg['RESEND_API_KEY'] || '';
-    let fromEmail = cfg['RESEND_FROM_EMAIL'] || 'Rastreio <onboarding@resend.dev>';
+    const resendApiKey = storeInfo?.resend_api_key?.trim() || cfg['RESEND_API_KEY'] || '';
+    let fromEmail = storeInfo?.resend_from_email?.trim() || cfg['RESEND_FROM_EMAIL'] || 'Rastreio <onboarding@resend.dev>';
     if (fromEmail.includes('seudominio.com')) {
       fromEmail = 'Rastreio <onboarding@resend.dev>';
     }

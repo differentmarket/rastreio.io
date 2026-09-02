@@ -704,6 +704,9 @@ export default function AdminClient() {
         setUpsellCoupon(activeStore.upsell_coupon || data.UPSELL_COUPON || 'CLIENTE15');
         setUpsellLink(activeStore.upsell_link || data.UPSELL_LINK || '');
         setUpsellImageUrl(activeStore.upsell_image_url || data.UPSELL_IMAGE_URL || '');
+
+        setResendFromEmail(activeStore.resend_from_email || data.RESEND_FROM_EMAIL || '');
+        setResendApiKey(activeStore.resend_api_key || data.RESEND_API_KEY || '');
       }
     } catch (err: any) {
       setSettingsError(err.message || 'Erro ao carregar configurações.');
@@ -1252,6 +1255,8 @@ export default function AdminClient() {
             upsell_coupon: upsellCoupon,
             upsell_link: upsellLink,
             upsell_image_url: upsellImageUrl,
+            resend_from_email: resendFromEmail,
+            resend_api_key: resendApiKey,
           }),
         });
 
@@ -1302,6 +1307,8 @@ export default function AdminClient() {
           upsell_coupon: upsellCoupon,
           upsell_link: upsellLink,
           upsell_image_url: upsellImageUrl,
+          resend_from_email: resendFromEmail,
+          resend_api_key: resendApiKey,
         }) : null);
         fetchStores();
       }
@@ -3159,14 +3166,32 @@ export default function AdminClient() {
                   <div className="px-6 py-4 bg-gradient-to-r from-blue-600/10 to-indigo-600/5 border-b border-slate-800 flex items-center gap-3">
                     <div className="p-2.5 rounded-xl bg-blue-500/15 text-blue-400 border border-blue-500/20"><Mail className="w-5 h-5" /></div>
                     <div>
-                      <h3 className="text-sm font-extrabold text-white">Serviço de E-mail (Resend)</h3>
-                      <p className="text-[10px] text-slate-400">Credenciais para envio automatizado de e-mails</p>
+                      <h3 className="text-sm font-extrabold text-white">
+                        Serviço de E-mail (Resend) {activeStore ? `· ${activeStore.nome_loja}` : ''}
+                      </h3>
+                      <p className="text-[10px] text-slate-400">
+                        {activeStore ? `Configurações exclusivas para envio de e-mails da loja: ${activeStore.nome_loja}` : 'Credenciais globais para envio automatizado de e-mails'}
+                      </p>
                     </div>
                   </div>
                   <div className="p-6 space-y-4">
-                    <SettingsInput label="Resend API Key" value={resendApiKey} onChange={setResendApiKey} placeholder="re_xxxxxxxxx" type="password" mono hint="Chave de API do painel Resend." />
+                    <SettingsInput 
+                      label={activeStore ? `Resend API Key (${activeStore.nome_loja})` : "Resend API Key"} 
+                      value={resendApiKey} 
+                      onChange={setResendApiKey} 
+                      placeholder="re_xxxxxxxxx" 
+                      type="password" 
+                      mono 
+                      hint={activeStore ? "Chave Resend específica desta loja (ou deixe a chave global se o domínio estiver na mesma conta)." : "Chave de API do painel Resend."} 
+                    />
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <SettingsInput label="E-mail de Remetente (From)" value={resendFromEmail} onChange={setResendFromEmail} placeholder="Rastreio <noreply@seudominio.com>" hint="Formato: Nome <email@dominio.com>" />
+                      <SettingsInput 
+                        label={activeStore ? `E-mail de Remetente (From - ${activeStore.nome_loja})` : "E-mail de Remetente (From)"} 
+                        value={resendFromEmail} 
+                        onChange={setResendFromEmail} 
+                        placeholder="Nome da Loja <atendimento@dominiodaloja.com>" 
+                        hint={activeStore ? `Remetente desta loja. Pedidos de ${activeStore.nome_loja} sairão com este remetente.` : "Formato: Nome <email@dominio.com>"} 
+                      />
                       <SettingsInput label="URL Pública do App" value={nextPublicAppUrl} onChange={setNextPublicAppUrl} placeholder="https://seudominio.com" hint="Usada para gerar os links de rastreio." />
                     </div>
                   </div>
