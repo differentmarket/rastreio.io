@@ -277,11 +277,30 @@ npx vercel deploy --prod --force
 - **Descoberta:** As taxas e order bumps (Bradesco Seguros e Frete Express) eram compartilhados globalmente ou hardcoded. Isso vazava configurações de ofertas e valores de uma loja para outra.
 - **Decisão:** Adicionamos colunas específicas de controle de taxas e bumps na tabela `stores`. Adaptamos o Admin para salvar esses campos por loja, e as APIs de consulta e checkout para carregá-los dinamicamente por rastreio, garantindo isolamento total. Mapeamos os order bumps para iniciar com Frete Express marcado e Bradesco desmarcado por padrão no checkout.
 
-### 8.13 Sincronização de Pedidos Pendentes e Recuperação de Vendas via WhatsApp
-- **Solicitação:** A sincronização manual da Shopify buscava apenas pedidos pagos, impossibilitando a gestão de recuperação de vendas de pedidos pendentes que não passavam pelo webhook.
-- **Decisão:** Alteramos a rota de sincronização `/api/shopify/sync` para puxar status `paid,pending` da Shopify. Implementamos a criação síncrona de conversas de recuperação de vendas na tabela `ai_recovery_conversations` para novos pedidos pendentes vindos da sincronização, além de atualizar o status do agendamento caso um pedido pendente existente seja pago.
+### 8.14 Integração de Webhook Automático de Rastreio para Gateways de Pagamento
+- **Solicitação:** Envio automático do código de rastreio para o Gateway de pagamento (ex: Appmax, Yampi, Mercado Pago, Vega, etc.) assim que o rastreio for gerado, via webhook ou API.
+- **Implementação:** Criado o módulo `lib/gatewayWebhook.ts` com a função `sendTrackingToGateway(orderId, codigoRastreio)`.
+- **Gatilhos:** Acionado automaticamente na sincronização de novos pedidos (`lib/shopifySyncHelper.ts`), na criação avulsa (`app/api/pedidos/route.ts`) e no disparo em lote (`app/api/pedidos/enviar-lote/route.ts`).
+- **Configuração:** Adicionados os campos `GATEWAY_WEBHOOK_URL` e `GATEWAY_WEBHOOK_SECRET` na tabela `settings` e gerenciados no painel em **Configurações > Integração com Gateway (Webhook)**.
+
+### 8.15 Correção da Regra D+1 e Timezone (Horário de Brasília vs UTC Vercel)
+- **Problema:** Pedidos feitos à noite no Brasil eram classificados como "do dia seguinte" pelos servidores em UTC da Vercel (`new Date().setHours(0,0,0,0)`), bloqueando o disparo no dia correto ou permitindo disparos prematuros.
+- **Decisão:** Padronizamos todas as funções de verificação temporal (`getStartOfDay` e `isAnteriorAHoje`) em `enviar-lote`, `enviar-notificacao` e `sync-shopify` para forçar explicitamente o fuso horário `America/Sao_Paulo` (`en-CA`), garantindo conformidade estrita com o calendário civil brasileiro.
+
+### 8.16 Isolamento Total Multi-Tenant de E-mails e Remetentes (Resend) por Loja
+- **Problema:** A tabela global `settings` continha um único remetente (`RESEND_FROM_EMAIL`), fazendo com que clientes de uma loja (ex: Atacado das Gaiolas) recebessem e-mails com remetente de outra loja (ex: Zona 420). Além disso, 57 pedidos legados estavam com `store_id = NULL`.
+- **Decisão:**
+  1. Adicionadas as colunas `resend_from_email` e `resend_api_key` na tabela `public.stores` (`supabase/add_resend_to_stores.sql`).
+  2. Atualizadas as rotas de envio (`enviar-lote`, `enviar-notificacao`, `testar-email`, `sync-shopify`) para buscar `storeInfo.resend_from_email` e `storeInfo.resend_api_key` específicos da loja do pedido, usando a chave global apenas como fallback seguro.
+  3. Atualizado o painel [AdminClient.tsx](file:///c:/Users/Hard%20Work/Desktop/Tracking/app/admin/AdminClient.tsx) para carregar e salvar esses campos dinamicamente por loja.
+  4. Executada a migração dos 57 pedidos órfãos, associando-os à loja de origem (**Cultura 420**), zerando qualquer risco de mistura cadastral em notas fiscais.
+
+### 8.17 Correção de Status de Pedidos no Disparo em Lote (`enviado`/`separacao` vs `pago`)
+- **Problema:** Ao clicar em "Todos Pendentes", a tela exibia `⚠️ Nenhum e-mail enviado (420 erros). Motivo: Verifique as configurações do Resend`. A API do Resend estava 100% operacional, mas a rota `enviar-lote` continha a trava rígida `.eq('status_pedido', 'pago')`, enquanto a fila de e-mails do painel listava pedidos com status da Shopify (`'enviado'`, `'separacao'`, etc.). Isso fazia a query retornar 0 pedidos e cair no fallback de erro genérico do painel.
+- **Decisão:** Alteramos a query de pedidos em `enviar-lote` para aceitar `.in('status_pedido', ['pago', 'separacao', 'enviado', 'entregue'])`, ou buscar diretamente por ID quando um `orderId` individual for passado pelo loop do painel. Aprimoramos o tratamento de retorno no frontend para exibir justificativas reais e contextuais caso o pedido esteja retido pelas regras de elegibilidade temporal (D+1).
 
 ---
 
 > **Dica para Economia de Tokens com IAs**: Ao iniciar uma nova instrução com um assistente de IA, mencione apenas: *"Consulte o arquivo `ARCHITECTURE.md` para entender a estrutura e convenções antes de editar."*
+
 
