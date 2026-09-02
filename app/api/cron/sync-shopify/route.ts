@@ -5,14 +5,16 @@ import { executarSincronizacaoShopify } from '@/lib/shopifySyncHelper';
 
 export const dynamic = 'force-dynamic';
 
-function getStartOfDay(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+function getStartOfDay(date: Date = new Date()): Date {
+  const brDateStr = date.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  return new Date(`${brDateStr}T00:00:00-03:00`);
 }
 
 function isAnteriorAHoje(orderCreatedAt: string): boolean {
-  const orderDay = getStartOfDay(new Date(orderCreatedAt));
-  const todayDay = getStartOfDay(new Date());
-  return orderDay < todayDay;
+  if (!orderCreatedAt) return false;
+  const orderDateStr = new Date(orderCreatedAt).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const todayDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  return orderDateStr < todayDateStr;
 }
 
 export async function GET(req: NextRequest) {

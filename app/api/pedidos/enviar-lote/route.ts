@@ -5,16 +5,18 @@ import { enviarRastreioShopify } from '@/lib/shopifyService';
 
 export const dynamic = 'force-dynamic';
 
-// ── Helpers de Data/Dia Útil ──────────────────────────────────────
-function getStartOfDay(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+// ── Helpers de Data/Dia Útil (Horário Oficial de Brasília - America/Sao_Paulo) ──
+function getStartOfDay(date: Date = new Date()): Date {
+  const brDateStr = date.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  return new Date(`${brDateStr}T00:00:00-03:00`);
 }
 
-/** Retorna true se o pedido foi criado ANTES de hoje (= pode receber rastreio agora) */
+/** Retorna true se o pedido foi criado ANTES de hoje no horário de Brasília (= pode receber rastreio agora) */
 function isAnteriorAHoje(orderCreatedAt: string): boolean {
-  const orderDay = getStartOfDay(new Date(orderCreatedAt));
-  const todayDay = getStartOfDay(new Date());
-  return orderDay < todayDay;
+  if (!orderCreatedAt) return false;
+  const orderDateStr = new Date(orderCreatedAt).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const todayDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  return orderDateStr < todayDateStr;
 }
 
 /** Retorna true se já passaram X horas desde a criação do pedido */

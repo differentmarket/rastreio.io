@@ -186,9 +186,10 @@ export async function POST(
     };
 
     function isAnteriorAHoje(orderCreatedAt: string): boolean {
-      const orderDay = new Date(new Date(orderCreatedAt).getFullYear(), new Date(orderCreatedAt).getMonth(), new Date(orderCreatedAt).getDate());
-      const todayDay = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
-      return orderDay < todayDay;
+      if (!orderCreatedAt) return false;
+      const orderDateStr = new Date(orderCreatedAt).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+      const todayDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+      return orderDateStr < todayDateStr;
     }
 
     const criadoEmDiaAnterior = isAnteriorAHoje(order.created_at);
