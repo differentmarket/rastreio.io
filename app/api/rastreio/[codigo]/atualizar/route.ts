@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { checkAdminAuth } from '@/lib/authHelper';
+import { validateTenantAccess } from '@/lib/authHelper';
 import { atualizarStatusPedidoShopify } from '@/lib/shopifyService';
 
 export const dynamic = 'force-dynamic';
@@ -12,19 +12,10 @@ export async function POST(
   try {
     const { codigo } = await params;
 
-    // 1. Validar autenticação admin
-    const isAdmin = await checkAdminAuth(req);
-    if (!isAdmin) {
-      return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-    }
-
-    const body = await req.json();
-    const { action = 'add', eventIndex, status, descricao, local, data: customDate } = body;
-
-    // 2. Buscar rastreamento atual
+    // 1. Buscar rastreamento atual com dados de loja/pedido
     const { data: tracking, error: fetchError } = await supabaseAdmin
       .from('trackings')
-      .select('id, status, historico, order_id, orders ( shopify_order_id )')
+      .select('id, store_id, status, historico, order_id, orders ( id, store_id, shopify_order_id )')
       .eq('codigo_rastreio', codigo.toUpperCase().trim())
       .maybeSingle();
 
@@ -34,6 +25,21 @@ export async function POST(
         { status: 404 }
       );
     }
+
+    const orderData: any = Array.isArray(tracking.orders) ? tracking.orders[0] : tracking.orders;
+    const trackingStoreId = tracking.store_id || orderData?.store_id || null;
+
+    // 2. Validar se o usuário tem permissão para a loja deste rastreio
+    const tenant = await validateTenantAccess(req, trackingStoreId);
+    if (!tenant.authorized) {
+      return NextResponse.json(
+        { error: 'Acesso negado: este código de rastreio pertence a outra loja.' },
+        { status: tenant.status || 403 }
+      );
+    }
+
+    const body = await req.json();
+    const { action = 'add', eventIndex, status, descricao, local, data: customDate } = body;
 
     let historicoAtual = Array.isArray(tracking.historico) ? [...tracking.historico] : [];
     let novoStatus = status || tracking.status;
@@ -93,7 +99,6 @@ export async function POST(
     }
 
     // Sincroniza o novo status com o Shopify adicionando/atualizando tags no pedido
-    const orderData: any = Array.isArray(tracking.orders) ? tracking.orders[0] : tracking.orders;
     if (orderData && orderData.shopify_order_id) {
       await atualizarStatusPedidoShopify(orderData.shopify_order_id, novoStatus);
     }

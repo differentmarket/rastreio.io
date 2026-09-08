@@ -1,25 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { checkAdminAuth } from '@/lib/authHelper';
+import { validateTenantAccess } from '@/lib/authHelper';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
-    const isAdmin = await checkAdminAuth(req);
-    if (!isAdmin) {
-      return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-    }
-
     const body = await req.json().catch(() => ({}));
     const { periodo, status, descricao, localidade } = body;
+    const store_id = body.store_id || null;
+
+    // 1. Validar autorização Multi-Tenant
+    const tenant = await validateTenantAccess(req, store_id);
+    if (!tenant.authorized) {
+      return NextResponse.json(
+        { error: 'Acesso negado aos pedidos desta loja.' },
+        { status: tenant.status || 403 }
+      );
+    }
 
     if (!status || !descricao) {
       return NextResponse.json({ error: 'Status e descrição do evento são obrigatórios.' }, { status: 400 });
     }
 
-    // Calcular data limite com base no período
-    let query = supabaseAdmin.from('orders').select('id, created_at, trackings(id, status, historico)');
+    // Calcular data limite com base no período e restringir estritamente ao tenant
+    let query = supabaseAdmin.from('orders').select('id, store_id, created_at, trackings(id, status, historico)');
+
+    if (tenant.targetStoreId) {
+      query = query.eq('store_id', tenant.targetStoreId);
+    } else if (!tenant.isSuperAdmin) {
+      query = query.in('store_id', tenant.allowedStoreIds);
+    }
+
     const agora = new Date();
 
     if (periodo === 'hoje') {

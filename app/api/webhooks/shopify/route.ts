@@ -81,24 +81,93 @@ export async function HEAD() {
 
 export async function POST(req: NextRequest) {
   try {
+    // 1. Capturar raw body para validação criptográfica HMAC
     const rawBody = await req.text();
     const topic = req.headers.get('x-shopify-topic');
     const hmacHeader = req.headers.get('x-shopify-hmac-sha256') || '';
     const shopDomainHeader = req.headers.get('x-shopify-shop-domain') || '';
+
+    // Validação preliminar de cabeçalhos Shopify
+    if (!shopDomainHeader || !hmacHeader) {
+      return NextResponse.json(
+        { error: 'Cabeçalhos do webhook Shopify (x-shopify-shop-domain / x-shopify-hmac-sha256) ausentes.' },
+        { status: 401 }
+      );
+    }
+
+    const cleanDomain = shopDomainHeader.toLowerCase().trim().replace(/^https?:\/\//, '');
+
+    // 2. Identificar loja cadastrada internamente (NUNCA confiar no payload)
+    const { data: store } = await supabaseAdmin
+      .from('stores')
+      .select('id, status, shopify_domain, shopify_webhook_secret')
+      .ilike('shopify_domain', cleanDomain)
+      .maybeSingle();
+
+    let resolvedStore = store;
+    if (!resolvedStore) {
+      const { data: allStores } = await supabaseAdmin
+        .from('stores')
+        .select('id, status, shopify_domain, shopify_webhook_secret');
+      resolvedStore = (allStores || []).find((s: any) => {
+        const d = (s.shopify_domain || '').toLowerCase().trim().replace(/^https?:\/\//, '');
+        return d === cleanDomain || cleanDomain.startsWith(d);
+      }) || null;
+    }
+
     let storeId: string | null = null;
-    if (shopDomainHeader) {
-      try {
-        const { data: store } = await supabaseAdmin
-          .from('stores')
-          .select('id')
-          .eq('shopify_domain', shopDomainHeader.toLowerCase().trim())
-          .maybeSingle();
-        if (store) storeId = store.id;
-      } catch (err) {
-        // Ignora se tabela não existir
+    let webhookSecret = '';
+
+    if (resolvedStore) {
+      // Validar status da loja
+      if (resolvedStore.status && resolvedStore.status !== 'ativa') {
+        return NextResponse.json(
+          { error: 'Loja inativa. Webhook rejeitado.' },
+          { status: 403 }
+        );
+      }
+      storeId = resolvedStore.id;
+      webhookSecret = resolvedStore.shopify_webhook_secret || '';
+    } else {
+      // Verificar se corresponde à loja global configurada em settings
+      const { data: dbSettings } = await supabaseAdmin.from('settings').select('key, value');
+      const cfg: Record<string, string> = {};
+      dbSettings?.forEach(s => { cfg[s.key] = s.value; });
+      const globalDomain = (cfg['SHOPIFY_STORE_DOMAIN'] || process.env.SHOPIFY_STORE_DOMAIN || '')
+        .toLowerCase()
+        .trim()
+        .replace(/^https?:\/\//, '');
+
+      if (globalDomain && (globalDomain === cleanDomain || cleanDomain.startsWith(globalDomain))) {
+        webhookSecret = cfg['SHOPIFY_WEBHOOK_SECRET'] || process.env.SHOPIFY_WEBHOOK_SECRET || '';
+        storeId = null;
+      } else {
+        return NextResponse.json(
+          { error: 'Loja não encontrada ou não cadastrada para este domínio Shopify.' },
+          { status: 401 }
+        );
       }
     }
 
+    // Se a loja não tem segredo cadastrado, tenta o segredo global de fallback
+    if (!webhookSecret) {
+      const { data: dbSettings } = await supabaseAdmin.from('settings').select('key, value');
+      const cfg: Record<string, string> = {};
+      dbSettings?.forEach(s => { cfg[s.key] = s.value; });
+      webhookSecret = cfg['SHOPIFY_WEBHOOK_SECRET'] || process.env.SHOPIFY_WEBHOOK_SECRET || '';
+    }
+
+    // 3. Validar assinatura HMAC usando o segredo específico da loja
+    const isSignatureValid = verifyShopifyWebhook(rawBody, hmacHeader, webhookSecret);
+    if (!isSignatureValid) {
+      console.warn(`[WEBHOOK SHOPIFY] Assinatura HMAC inválida para domínio: ${cleanDomain}`);
+      return NextResponse.json(
+        { error: 'Assinatura HMAC inválida.' },
+        { status: 401 }
+      );
+    }
+
+    // 4. Somente após a validação criptográfica, processar o payload JSON
     let payload: ShopifyOrderWebhook;
     try {
       payload = rawBody ? JSON.parse(rawBody) : {};
@@ -216,15 +285,37 @@ export async function POST(req: NextRequest) {
         statusPedido = 'enviado';
       }
 
-      // Busca configuração de delay para envio da Nota Fiscal e Agendamento da IA de Recuperação
+      // Busca configuração de delay para envio da Nota Fiscal e Agendamento de Recuperação
       const { data: dbSettings } = await supabaseAdmin.from('settings').select('key, value');
       const cfg: Record<string, string> = {};
       dbSettings?.forEach(s => { cfg[s.key] = s.value; });
       const notaDelayHoras = parseInt(cfg['NOTA_DELAY_HORAS'] || '2', 10);
       const enviarNotaEm = new Date(Date.now() + notaDelayHoras * 3600 * 1000).toISOString();
 
-      const aiDelayMinutes = parseInt(cfg['AI_DELAY_MINUTES'] || '15', 10);
-      const agendadoParaRecuperacao = new Date(Date.now() + aiDelayMinutes * 60 * 1000).toISOString();
+      let recoveryDelayMinutes = 30;
+      if (storeId) {
+        const { data: step1 } = await supabaseAdmin
+          .from('recovery_steps')
+          .select('delay_minutes')
+          .eq('store_id', storeId)
+          .eq('step_number', 1)
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (step1?.delay_minutes) {
+          recoveryDelayMinutes = Number(step1.delay_minutes);
+        } else {
+          const { data: storeRec } = await supabaseAdmin
+            .from('stores')
+            .select('ai_recovery_delay_minutes')
+            .eq('id', storeId)
+            .maybeSingle();
+          if (storeRec?.ai_recovery_delay_minutes) {
+            recoveryDelayMinutes = Number(storeRec.ai_recovery_delay_minutes);
+          }
+        }
+      }
+      const agendadoParaRecuperacao = new Date(Date.now() + recoveryDelayMinutes * 60 * 1000).toISOString();
 
       // Extrair telefone do cliente para WhatsApp
       const rawPhone = payload.customer?.phone || (payload.shipping_address as any)?.phone || (payload.billing_address as any)?.phone || '';
@@ -234,11 +325,17 @@ export async function POST(req: NextRequest) {
       let orderDbId: string | null = null;
       const { data: existingOrder } = await supabaseAdmin
         .from('orders')
-        .select('id, status_pedido')
+        .select('id, store_id, status_pedido')
         .eq('shopify_order_id', shopifyOrderId)
         .maybeSingle();
 
       if (existingOrder) {
+        // Garantir que webhook recebido da Loja A nunca altere pedido pertencente à Loja B
+        if (storeId && existingOrder.store_id && existingOrder.store_id !== storeId) {
+          console.warn(`[WEBHOOK SHOPIFY] Conflito de tenant: webhook da loja ${storeId} tentou atualizar pedido pertencente à loja ${existingOrder.store_id}`);
+          return NextResponse.json({ error: 'Conflito de tenant detectado.' }, { status: 403 });
+        }
+
         orderDbId = existingOrder.id;
         await supabaseAdmin
           .from('orders')
@@ -250,8 +347,68 @@ export async function POST(req: NextRequest) {
           })
           .eq('id', orderDbId);
 
-        // Se o pedido foi atualizado para PAGO, atualizar o status da recuperação de IA
+        // Se o pedido foi atualizado para PAGO, verificar se houve mensagem enviada para atribuir receita
         if (statusPedido === 'pago' || payload.financial_status === 'paid') {
+          // 1. Verifica se houve mensagem enviada previamente pela recuperação
+          const { data: sentQueueItem } = await supabaseAdmin
+            .from('recovery_queue')
+            .select('id, store_id, customer_id, sent_at, last_sent_step, current_step')
+            .eq('order_id', orderDbId)
+            .maybeSingle();
+
+          const stepUsed = (sentQueueItem?.last_sent_step && sentQueueItem.last_sent_step > 0)
+            ? sentQueueItem.last_sent_step
+            : (sentQueueItem?.sent_at ? 1 : 0);
+
+          if (sentQueueItem && stepUsed > 0 && sentQueueItem.sent_at) {
+            const sentAtMs = new Date(sentQueueItem.sent_at).getTime();
+            const diffMin = Math.max(0, Math.round((Date.now() - sentAtMs) / (60 * 1000)));
+
+            // Atribuição de receita à recuperação com identificação do step que converteu
+            await supabaseAdmin.from('recovery_revenue').upsert({
+              store_id: sentQueueItem.store_id || storeId,
+              order_id: orderDbId,
+              queue_id: sentQueueItem.id,
+              customer_id: sentQueueItem.customer_id,
+              valor_total: totalVal,
+              attribution_type: 'whatsapp_recovery',
+              step_number: stepUsed,
+              tempo_minutos_ate_conversao: diffMin,
+              sent_at: sentQueueItem.sent_at,
+              recovered_at: new Date().toISOString(),
+            }, { onConflict: 'order_id' });
+
+            // Registro do evento de conversão por etapa
+            await supabaseAdmin.from('recovery_events').insert({
+              store_id: sentQueueItem.store_id || storeId,
+              order_id: orderDbId,
+              queue_id: sentQueueItem.id,
+              event_type: 'step_converted',
+              channel: 'whatsapp',
+              metadata: { valor_total: totalVal, tempo_minutos: diffMin, step_number: stepUsed },
+            });
+          }
+
+          // 2. Cancela qualquer recuperação pendente e passos futuros que ainda não foram disparados
+          await supabaseAdmin
+            .from('recovery_queue')
+            .update({
+              status: 'cancelled',
+              cancelled_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              next_action_at: null,
+            })
+            .eq('order_id', orderDbId)
+            .in('status', ['pending', 'processing']);
+
+          await supabaseAdmin.from('recovery_events').insert({
+            store_id: sentQueueItem?.store_id || storeId,
+            order_id: orderDbId,
+            event_type: 'step_cancelled',
+            channel: 'whatsapp',
+            metadata: { reason: 'order_paid' },
+          });
+
           const { data: conv } = await supabaseAdmin
             .from('ai_recovery_conversations')
             .select('id, status, mensagens')
@@ -304,11 +461,50 @@ export async function POST(req: NextRequest) {
         } else {
           orderDbId = newOrder.id;
 
-          // Se for um novo pedido e estiver PENDENTE (não pago), agendar a recuperação por WhatsApp via IA
+          // Se for um novo pedido e estiver PENDENTE (não pago), agendar na fila de recuperação recovery_queue
           if (statusPedido === 'pendente' && cleanPhone) {
             const customerName = payload.customer
               ? `${payload.customer.first_name || ''} ${payload.customer.last_name || ''}`.trim()
               : 'Cliente';
+
+            const paymentLink = payload.order_status_url || payload.checkout_url || '';
+
+            const { data: queueInserted } = await supabaseAdmin.from('recovery_queue').insert({
+              store_id: storeId,
+              order_id: orderDbId,
+              customer_id: customerId,
+              status: 'pending',
+              current_step: 1,
+              last_sent_step: 0,
+              scheduled_at: agendadoParaRecuperacao,
+              next_action_at: agendadoParaRecuperacao,
+              attempt_count: 0,
+              metadata: {
+                customer_name: customerName,
+                customer_phone: cleanPhone,
+                numero_pedido: orderNumber,
+                valor_total: totalVal,
+                order_status_url: payload.order_status_url || null,
+                checkout_url: payload.checkout_url || null,
+                payment_link: paymentLink,
+                itens: payload.line_items?.map((item: any) => ({
+                  title: item.title || item.name,
+                  quantity: item.quantity,
+                  price: item.price,
+                })) || [],
+              }
+            }).select('id').single();
+
+            if (queueInserted?.id) {
+              await supabaseAdmin.from('recovery_events').insert({
+                store_id: storeId,
+                order_id: orderDbId,
+                queue_id: queueInserted.id,
+                event_type: 'enqueued',
+                channel: 'whatsapp',
+                metadata: { valor_total: totalVal, scheduled_at: agendadoParaRecuperacao },
+              });
+            }
 
             await supabaseAdmin.from('ai_recovery_conversations').insert({
               store_id: storeId,
@@ -320,7 +516,7 @@ export async function POST(req: NextRequest) {
               agendado_para: agendadoParaRecuperacao,
               mensagens: [],
             });
-            console.log(`[RECUPERAÇÃO IA] Pedido #${orderNumber} não pago agendado para envio via WhatsApp em ${agendadoParaRecuperacao}`);
+            console.log(`[RECUPERAÇÃO] Pedido #${orderNumber} não pago agendado na recovery_queue para ${agendadoParaRecuperacao}`);
           }
         }
       }

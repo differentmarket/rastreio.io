@@ -1,14 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { checkAdminAuth } from '@/lib/authHelper';
+import { validateTenantAccess } from '@/lib/authHelper';
 
 export const dynamic = 'force-dynamic';
 
+const SENSITIVE_SETTINGS_KEYS = [
+  'SHOPIFY_ADMIN_TOKEN',
+  'SHOPIFY_WEBHOOK_SECRET',
+  'SHOPIFY_CLIENT_SECRET',
+  'RESEND_API_KEY',
+  'GATEWAY_WEBHOOK_SECRET',
+];
+
+function isMaskedValue(val: any): boolean {
+  if (typeof val !== 'string') return false;
+  const trimmed = val.trim();
+  return trimmed.includes('•') || trimmed.includes('*');
+}
+
 export async function GET(req: NextRequest) {
   try {
-    const isAdmin = await checkAdminAuth(req);
-    if (!isAdmin) {
+    const tenant = await validateTenantAccess(req, null);
+    if (!tenant.authorized) {
       return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+    }
+
+    // Regra estrita: apenas Superadmin tem acesso às configurações globais do sistema
+    if (!tenant.isSuperAdmin) {
+      return NextResponse.json(
+        { error: 'Acesso negado: apenas superadministradores podem acessar as configurações globais do sistema.' },
+        { status: 403 }
+      );
     }
 
     // Bypass com mock em ambiente local
@@ -16,8 +38,8 @@ export async function GET(req: NextRequest) {
     if (supabaseUrl.includes('mock-project')) {
       return NextResponse.json({
         SHOPIFY_STORE_DOMAIN: process.env.SHOPIFY_STORE_DOMAIN || 'mock-store.myshopify.com',
-        SHOPIFY_ADMIN_TOKEN: 'shpat_mock_token_secret_value_123',
-        SHOPIFY_WEBHOOK_SECRET: 'mock_webhook_secret_value',
+        SHOPIFY_ADMIN_TOKEN: '••••••••',
+        SHOPIFY_WEBHOOK_SECRET: '••••••••',
         DELAY_POSTADO_EM_TRANSITO: '2',
         DELAY_EM_TRANSITO_SAIU_ENTREGA: '3',
         DELAY_SAIU_ENTREGA_ENTREGUE: '1',
@@ -27,7 +49,7 @@ export async function GET(req: NextRequest) {
         EMPRESA_CIDADE: 'São Paulo',
         EMPRESA_ESTADO: 'SP',
         EMPRESA_CEP: '01000-000',
-        RESEND_API_KEY: 're_mock_key_value_456',
+        RESEND_API_KEY: '••••••••',
         RESEND_FROM_EMAIL: 'Rastreio <noreply@seudominio.com>',
         NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
       });
@@ -68,9 +90,15 @@ export async function GET(req: NextRequest) {
     };
 
     settings?.forEach((item) => {
-      // Aceitar qualquer chave do banco, não só as do config inicial
       config[item.key] = item.value;
     });
+
+    // Mascarar segredos sensíveis: nunca expor chaves cruas em JSON
+    for (const key of SENSITIVE_SETTINGS_KEYS) {
+      if (config[key]) {
+        config[key] = '••••••••';
+      }
+    }
 
     return NextResponse.json(config);
   } catch (err: any) {
@@ -80,41 +108,34 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const isAdmin = await checkAdminAuth(req);
-    if (!isAdmin) {
+    const tenant = await validateTenantAccess(req, null);
+    if (!tenant.authorized) {
       return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
     }
 
-    const body = await req.json();
-    const { 
-      SHOPIFY_STORE_DOMAIN, 
-      SHOPIFY_ADMIN_TOKEN, 
-      SHOPIFY_WEBHOOK_SECRET,
-      DELAY_POSTADO_EM_TRANSITO,
-      DELAY_EM_TRANSITO_SAIU_ENTREGA,
-      DELAY_SAIU_ENTREGA_ENTREGUE,
-      EMPRESA_NOME,
-      EMPRESA_CNPJ,
-      EMPRESA_ENDERECO,
-      EMPRESA_CIDADE,
-      EMPRESA_ESTADO,
-      EMPRESA_CEP,
-      RESEND_API_KEY,
-      RESEND_FROM_EMAIL,
-      NEXT_PUBLIC_APP_URL,
-      NOTA_DELAY_HORAS,
-      RASTREIO_PROXIMO_DIA_UTIL,
-      AUTOMACAO_ATIVA,
-    } = body;
+    // Regra estrita: apenas Superadmin pode alterar configurações globais do sistema
+    if (!tenant.isSuperAdmin) {
+      return NextResponse.json(
+        { error: 'Acesso negado: apenas superadministradores podem alterar configurações globais do sistema.' },
+        { status: 403 }
+      );
+    }
 
-    // Bypass mock em ambiente local (apenas simula sucesso)
+    const body = await req.json().catch(() => ({}));
+
+    // Bypass mock em ambiente local
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     if (supabaseUrl.includes('mock-project')) {
       return NextResponse.json({ ok: true });
     }
 
-    // Salva todas as chaves enviadas no body
+    // Salva as chaves enviadas no body, ignorando campos sensíveis mascarados com "••••••••"
     for (const [key, val] of Object.entries(body)) {
+      if (SENSITIVE_SETTINGS_KEYS.includes(key) && isMaskedValue(val)) {
+        // Ignora a alteração deste campo mascarado para preservar o segredo real existente
+        continue;
+      }
+
       const { error } = await supabaseAdmin
         .from('settings')
         .upsert({ key, value: String(val ?? '') }, { onConflict: 'key' });

@@ -1,25 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { checkAdminAuth } from '@/lib/authHelper';
+import { validateTenantAccess } from '@/lib/authHelper';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
-    const isAdmin = await checkAdminAuth(req);
-    if (!isAdmin) {
-      return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-    }
-
     const { searchParams } = new URL(req.url);
     const storeIdParam = searchParams.get('store_id');
+
+    // Validação estrita de Tenant
+    const tenant = await validateTenantAccess(req, storeIdParam);
+    if (!tenant.authorized) {
+      return NextResponse.json({ error: tenant.error || 'Não autorizado.' }, { status: tenant.status });
+    }
 
     let queryTax = supabaseAdmin.from('tax_payments').select('*');
     let queryUpsell = supabaseAdmin.from('upsell_events').select('*');
 
-    if (storeIdParam && storeIdParam !== 'all' && storeIdParam !== 'default-store') {
-      queryTax = queryTax.eq('store_id', storeIdParam);
-      queryUpsell = queryUpsell.eq('store_id', storeIdParam);
+    if (tenant.targetStoreId) {
+      queryTax = queryTax.eq('store_id', tenant.targetStoreId);
+      queryUpsell = queryUpsell.eq('store_id', tenant.targetStoreId);
+    } else if (!tenant.isSuperAdmin) {
+      // Impede visualização global por usuário comum
+      queryTax = queryTax.in('store_id', tenant.allowedStoreIds);
+      queryUpsell = queryUpsell.in('store_id', tenant.allowedStoreIds);
     }
 
     const [{ data: recordsTax }, { data: recordsUpsell }] = await Promise.all([

@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { checkAdminAuth } from '@/lib/authHelper';
+import { validateTenantAccess } from '@/lib/authHelper';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
-    const isAdmin = await checkAdminAuth(req);
-    if (!isAdmin) {
-      return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+    const { searchParams } = new URL(req.url);
+    const storeIdFilter = searchParams.get('store_id');
+
+    // Validação de acesso ao tenant
+    const tenant = await validateTenantAccess(req, storeIdFilter);
+    if (!tenant.authorized) {
+      return NextResponse.json({ error: tenant.error || 'Não autorizado.' }, { status: tenant.status });
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -28,17 +32,17 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(mockOrders);
     }
 
-    const { searchParams } = new URL(req.url);
-    const storeIdFilter = searchParams.get('store_id');
-
-    // 1. Busca pedidos
+    // 1. Busca pedidos filtrando exclusivamente pelas lojas autorizadas
     let query = supabaseAdmin
       .from('orders')
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (storeIdFilter && storeIdFilter !== 'all') {
-      query = query.eq('store_id', storeIdFilter);
+    if (tenant.targetStoreId) {
+      query = query.eq('store_id', tenant.targetStoreId);
+    } else if (!tenant.isSuperAdmin) {
+      // Se não for superadmin, restringe estritamente às lojas autorizadas do usuário
+      query = query.in('store_id', tenant.allowedStoreIds);
     }
 
     const { data: rawOrders, error: ordersErr } = await query;
@@ -52,9 +56,23 @@ export async function GET(req: NextRequest) {
       return NextResponse.json([]);
     }
 
-    // 2. Busca todos os clientes e trackings para vincular manualmente (sem depender de FK do Supabase)
-    const { data: customers } = await supabaseAdmin.from('customers').select('id, nome, email');
-    const { data: trackings } = await supabaseAdmin.from('trackings').select('order_id, codigo_rastreio, status, email_enviado, email_enviado_em, shopify_synced');
+    // 2. Busca somente os clientes e trackings dos pedidos retornados (sem vazamento de dados globais)
+    const orderIds = rawOrders.map((o: any) => o.id);
+    const customerIds = Array.from(new Set(rawOrders.map((o: any) => o.customer_id).filter(Boolean)));
+
+    let customers: any[] = [];
+    if (customerIds.length > 0) {
+      const { data: custData } = await supabaseAdmin
+        .from('customers')
+        .select('id, nome, email')
+        .in('id', customerIds);
+      customers = custData || [];
+    }
+
+    const { data: trackings } = await supabaseAdmin
+      .from('trackings')
+      .select('order_id, codigo_rastreio, status, email_enviado, email_enviado_em, shopify_synced')
+      .in('order_id', orderIds);
 
     const customerMap = new Map((customers || []).map(c => [c.id, c]));
     const trackingMap = new Map((trackings || []).map(t => [t.order_id, t]));
@@ -85,11 +103,6 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const isAdmin = await checkAdminAuth(req);
-    if (!isAdmin) {
-      return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-    }
-
     const body = await req.json();
     const { 
       order_id, 
@@ -103,6 +116,12 @@ export async function POST(req: NextRequest) {
 
     if (!codigo_rastreio || !status_rastreio || !store_id) {
       return NextResponse.json({ error: 'Código de rastreio, status e ID da loja são obrigatórios.' }, { status: 400 });
+    }
+
+    // Validação de acesso ao tenant para criação
+    const tenant = await validateTenantAccess(req, store_id);
+    if (!tenant.authorized) {
+      return NextResponse.json({ error: tenant.error || 'Não autorizado para criar pedidos nesta loja.' }, { status: tenant.status });
     }
 
     let finalOrderId = order_id;

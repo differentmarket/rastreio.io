@@ -8,7 +8,9 @@ import {
   Send, CheckCheck, Mail, AlertTriangle, ShoppingBag, Download, Inbox,
   RotateCcw, Store, Zap, ArrowRight, ExternalLink, CheckCircle2, XCircle, Building2, Users, Globe,
   BarChart3, Bot, Sparkles, MessageSquare, Palette, Pencil, Trash2, X, Link, Plus, DollarSign, ShieldCheck, CreditCard,
+  TrendingUp,
 } from 'lucide-react';
+import RecoverySequenceEditor from '@/components/recovery/RecoverySequenceEditor';
 
 // ─────────────── Types ───────────────
 interface OrderList {
@@ -301,7 +303,9 @@ export default function AdminClient() {
     taxa_conversao: 0,
   });
   const [selectedAiConvModal, setSelectedAiConvModal] = useState<any | null>(null);
-  const [aiDelayMinutes, setAiDelayMinutes] = useState('15');
+  const [aiDelayMinutes, setAiDelayMinutes] = useState('30');
+  const [aiInitialMessage, setAiInitialMessage] = useState('');
+  const [recoveryAnalytics, setRecoveryAnalytics] = useState<any | null>(null);
 
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -682,6 +686,8 @@ export default function AdminClient() {
         setAiTone(activeStore.ai_tone || 'amigavel');
         setAiTemperature(typeof activeStore.ai_temperature === 'number' ? activeStore.ai_temperature : 0.7);
         setAiCouponCode(activeStore.ai_coupon_code || '');
+        setAiDelayMinutes(String(activeStore.ai_recovery_delay_minutes || 30));
+        setAiInitialMessage(activeStore.ai_initial_message || '');
         setVeopagEnabled(activeStore.veopag_enabled || false);
         setVeopagClientId(activeStore.veopag_client_id || '');
         setVeopagClientSecret(activeStore.veopag_client_secret || '');
@@ -719,12 +725,28 @@ export default function AdminClient() {
     setLoadingAiConversations(true);
     try {
       const storeIdParam = activeStore?.id || 'all';
-      const res = await fetch(`/api/ai/conversations?store_id=${storeIdParam}`, { headers: getAuthHeaders() });
-      if (res.ok) {
-        const data = await res.json();
+      const [aiRes, recRes] = await Promise.all([
+        fetch(`/api/ai/conversations?store_id=${storeIdParam}`, { headers: getAuthHeaders() }),
+        fetch(`/api/analytics/recovery?store_id=${storeIdParam}`, { headers: getAuthHeaders() }),
+      ]);
+      if (aiRes.ok) {
+        const data = await aiRes.json();
         setAiConversations(data.conversations || []);
         if (data.metrics) {
           setAiMetrics(data.metrics);
+        }
+      }
+      if (recRes.ok) {
+        const recData = await recRes.json();
+        setRecoveryAnalytics(recData);
+        if (recData.metrics) {
+          setAiMetrics(prev => ({
+            ...prev,
+            total_contatados: recData.metrics.mensagens_enviadas || prev.total_contatados,
+            total_convertidos: recData.metrics.total_recuperados || prev.total_convertidos,
+            faturamento_recuperado: recData.metrics.receita_recuperada || prev.faturamento_recuperado,
+            taxa_conversao: recData.metrics.taxa_conversao || prev.taxa_conversao,
+          }));
         }
       }
     } catch { /* silent */ } finally {
@@ -746,12 +768,14 @@ export default function AdminClient() {
     if (session && activeTab === 'settings') fetchSettings();
     if (session && activeTab === 'fila') fetchEmailQueue();
     if (session && activeTab === 'analytics') fetchTaxAnalytics();
+    if (session && activeTab === 'ai_agent') fetchAiConversations();
     if (session && activeTab === 'members' && activeStore?.id) fetchStoreMembers(activeStore.id);
   }, [session, activeTab, activeStore?.id]);
 
   useEffect(() => {
     fetchSettings();
     fetchTaxAnalytics();
+    fetchAiConversations();
   }, [activeStore]);
 
   // Polling automático em tempo real (10s) sem recarregar a página
@@ -1235,8 +1259,9 @@ export default function AdminClient() {
             ai_prompt_custom: aiPromptCustom,
             ai_model: aiModel,
             ai_tone: aiTone,
-            ai_temperature: aiTemperature,
             ai_coupon_code: aiCouponCode,
+            ai_recovery_delay_minutes: parseInt(aiDelayMinutes, 10) || 30,
+            ai_initial_message: aiInitialMessage,
             veopag_enabled: veopagEnabled,
             veopag_client_id: veopagClientId,
             veopag_client_secret: veopagClientSecret,
@@ -2419,6 +2444,100 @@ export default function AdminClient() {
               </div>
             </div>
 
+            {/* ═══════ NOVO: Painel de Funil & Analytics de Receita Recuperada ═══════ */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <TrendingUp className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-white">Funil de Recuperação de Receita & ROI</h3>
+                    <p className="text-xs text-slate-400">Atribuição em tempo real de pedidos pagos após abordagem via WhatsApp</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 text-xs">
+                  <span className="text-slate-400">Tempo Médio até Conversão:</span>
+                  <span className="font-extrabold text-indigo-400">{recoveryAnalytics?.metrics?.tempo_medio_minutos || 0} min</span>
+                </div>
+              </div>
+
+              {/* Etapas do Funil em Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 text-center">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">1. Abandonados</span>
+                  <p className="text-xl font-extrabold text-white mt-1">{recoveryAnalytics?.metrics?.total_abandonados || 0}</p>
+                  <span className="text-[10px] text-slate-500">100% dos iniciados</span>
+                </div>
+
+                <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 text-center">
+                  <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider block">2. Disparados WhatsApp</span>
+                  <p className="text-xl font-extrabold text-indigo-400 mt-1">{recoveryAnalytics?.metrics?.mensagens_enviadas || 0}</p>
+                  <span className="text-[10px] text-slate-500">
+                    {recoveryAnalytics?.metrics?.total_abandonados ? Math.round((recoveryAnalytics.metrics.mensagens_enviadas / recoveryAnalytics.metrics.total_abandonados) * 100) : 0}% enviados
+                  </span>
+                </div>
+
+                <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 text-center">
+                  <span className="text-[10px] text-sky-400 font-bold uppercase tracking-wider block">3. Entregues</span>
+                  <p className="text-xl font-extrabold text-sky-400 mt-1">{recoveryAnalytics?.metrics?.mensagens_entregues || 0}</p>
+                  <span className="text-[10px] text-slate-500">Confirmação Evolution</span>
+                </div>
+
+                <div className="bg-slate-950/80 border border-emerald-500/20 bg-gradient-to-b from-emerald-500/5 to-transparent rounded-xl p-4 text-center">
+                  <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider block">4. Vendas Salvas</span>
+                  <p className="text-xl font-extrabold text-emerald-400 mt-1">{recoveryAnalytics?.metrics?.total_recuperados || 0}</p>
+                  <span className="text-[10px] text-emerald-500 font-bold">{recoveryAnalytics?.metrics?.taxa_conversao || 0}% conversão</span>
+                </div>
+              </div>
+
+              {/* Tabela de Vendas Recuperadas Recentes */}
+              {recoveryAnalytics?.recent_recoveries?.length > 0 && (
+                <div className="pt-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 mb-3 flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    Últimas Vendas Recuperadas (Atribuição Estrita)
+                  </h4>
+                  <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-900 text-slate-400 text-[10px] uppercase font-bold">
+                        <tr>
+                          <th className="px-4 py-2.5">Pedido</th>
+                          <th className="px-4 py-2.5">Valor Total</th>
+                          <th className="px-4 py-2.5">Canal</th>
+                          <th className="px-4 py-2.5">Tempo p/ Pagar</th>
+                          <th className="px-4 py-2.5">Data Recuperação</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800 text-slate-300">
+                        {recoveryAnalytics.recent_recoveries.map((r: any) => (
+                          <tr key={r.id} className="hover:bg-slate-900/50">
+                            <td className="px-4 py-2.5 font-bold text-white">#{r.numero_pedido}</td>
+                            <td className="px-4 py-2.5 font-bold text-emerald-400">R$ {r.valor_total.toFixed(2)}</td>
+                            <td className="px-4 py-2.5">
+                              <span className="px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 text-[10px] font-bold border border-indigo-500/20">
+                                WhatsApp
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5 text-slate-400">{r.tempo_minutos} min</td>
+                            <td className="px-4 py-2.5 text-slate-400">{new Date(r.recovered_at).toLocaleString('pt-BR')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ═══════ FASE 5.3: Editor Visual da Régua Inteligente de Recuperação ═══════ */}
+            <RecoverySequenceEditor
+              storeId={activeStore?.id}
+              storeName={activeStore?.nome_loja || empresaNome || 'Minha Loja'}
+              isOwner={activeStore ? (activeStore.role === 'owner' || !activeStore.role) : true}
+            />
+
             {/* Painel de Configurações Avançadas do LLM */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
               <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
@@ -3258,16 +3377,73 @@ export default function AdminClient() {
                     </label>
                   </div>
                   <div className="p-6 space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Tempo de Espera para Recuperar (Delay)</label>
+                        <select
+                          value={aiDelayMinutes}
+                          onChange={e => setAiDelayMinutes(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        >
+                          <option value="15">15 minutos após o pedido</option>
+                          <option value="30">30 minutos após o pedido (Recomendado)</option>
+                          <option value="60">60 minutos (1 hora)</option>
+                          <option value="120">120 minutos (2 horas)</option>
+                          <option value="1440">1440 minutos (24 horas)</option>
+                        </select>
+                        <span className="text-[10px] text-slate-500 mt-1 block">Tempo que o sistema aguarda antes de abordar o cliente no WhatsApp.</span>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Cupom de Desconto de Incentivo (Opcional)</label>
+                        <input
+                          type="text"
+                          value={aiCouponCode}
+                          onChange={e => setAiCouponCode(e.target.value.toUpperCase())}
+                          placeholder="Ex: QUERO5 ou VOLTEI10"
+                          className="w-full px-4 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-white text-xs font-mono uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        >
+                        </input>
+                        <span className="text-[10px] text-slate-500 mt-1 block">Cupom oferecido para convencer o cliente a pagar.</span>
+                      </div>
+                    </div>
+
                     <div>
-                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Instruções Personalizadas do Agente (Prompt)</label>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">Mensagem Inicial de Abordagem (Template)</label>
+                        <span className="text-[10px] text-indigo-400 font-semibold">Variáveis Dinâmicas Habilitadas</span>
+                      </div>
                       <textarea
                         rows={4}
+                        value={aiInitialMessage}
+                        onChange={e => setAiInitialMessage(e.target.value)}
+                        placeholder="Olá {primeiro_nome}! 🛒 Vi que você iniciou o pedido {numero_pedido} na {nome_loja}, mas o pagamento não foi concluído. Acesse o link para finalizar: {link_pagamento}"
+                        className="w-full px-4 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-white text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed"
+                      />
+                      <div className="mt-1.5 p-2.5 bg-slate-950 border border-slate-800/80 rounded-xl text-[10px] text-slate-400 space-y-1">
+                        <span className="font-bold text-slate-300 block">Tags disponíveis para substituição automática:</span>
+                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                          <code className="bg-slate-900 px-1.5 py-0.5 rounded text-indigo-300">{"{primeiro_nome}"}</code>
+                          <code className="bg-slate-900 px-1.5 py-0.5 rounded text-indigo-300">{"{numero_pedido}"}</code>
+                          <code className="bg-slate-900 px-1.5 py-0.5 rounded text-indigo-300">{"{nome_loja}"}</code>
+                          <code className="bg-slate-900 px-1.5 py-0.5 rounded text-amber-300">{"{link_pagamento}"}</code>
+                          <code className="bg-slate-900 px-1.5 py-0.5 rounded text-indigo-300">{"{cupom}"}</code>
+                          <code className="bg-slate-900 px-1.5 py-0.5 rounded text-indigo-300">{"{valor_pedido}"}</code>
+                          <code className="bg-slate-900 px-1.5 py-0.5 rounded text-indigo-300">{"{itens_pedido}"}</code>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Instruções do Agente de IA para Conversação (Prompt)</label>
+                      <textarea
+                        rows={3}
                         value={aiPromptCustom}
                         onChange={e => setAiPromptCustom(e.target.value)}
-                        placeholder="Ex: Trate o cliente pelo primeiro nome, ofereça cupom de 5%..."
+                        placeholder="Ex: Trate o cliente pelo primeiro nome, seja cordial, responda dúvidas de entrega e enfatize a segurança da compra..."
                         className="w-full px-4 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       />
-                      <span className="text-[10px] text-slate-500 mt-1 block">Regras e diretrizes de atendimento da sua marca.</span>
+                      <span className="text-[10px] text-slate-500 mt-1 block">Regras para a IA responder quando o cliente interagir de volta no WhatsApp.</span>
                     </div>
                   </div>
                 </div>

@@ -137,6 +137,7 @@ export async function executarSincronizacaoShopify(storeIdParam?: string, onlyRe
         if (shopifyOrder.fulfillment_status === 'fulfilled') statusPedido = 'enviado';
 
         // 1. Verificar se o pedido já existe no banco de dados para evitar requisições desnecessárias
+        const storeTargetId = currentStoreId && currentStoreId !== 'default-store' ? currentStoreId : null;
         let orderDbId: string | null = null;
         let isNew = false;
 
@@ -144,7 +145,7 @@ export async function executarSincronizacaoShopify(storeIdParam?: string, onlyRe
           ? { data: null }
           : await supabaseAdmin
               .from('orders')
-              .select('id, status_pedido')
+              .select('id, status_pedido, store_id')
               .eq('shopify_order_id', shopifyOrderId)
               .maybeSingle();
 
@@ -165,8 +166,61 @@ export async function executarSincronizacaoShopify(storeIdParam?: string, onlyRe
             totalAtualizados++;
             todosResultados.push({ numero_pedido: orderNumber, acao: 'atualizado', id: orderDbId });
 
-            // Se o pedido foi pago, atualizar recuperação de IA
+            // Se o pedido foi pago, verificar se houve mensagem enviada para atribuir receita
             if (statusPedido === 'pago' || shopifyOrder.financial_status === 'paid') {
+              // 1. Verifica se houve mensagem enviada previamente pela recuperação
+              const { data: sentQueueItem } = await supabaseAdmin
+                .from('recovery_queue')
+                .select('id, store_id, customer_id, sent_at, last_sent_step, current_step')
+                .eq('order_id', orderDbId)
+                .gt('last_sent_step', 0)
+                .order('sent_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+              if (sentQueueItem && sentQueueItem.sent_at) {
+                const sentAtMs = new Date(sentQueueItem.sent_at).getTime();
+                const diffMin = Math.max(0, Math.round((Date.now() - sentAtMs) / (60 * 1000)));
+                const stepUsed = sentQueueItem.last_sent_step || 1;
+
+                // Atribuição de receita à recuperação com step_number (UNIQUE(order_id) garante idempotência estrita)
+                await supabaseAdmin.from('recovery_revenue').upsert({
+                  store_id: sentQueueItem.store_id || storeTargetId,
+                  order_id: orderDbId,
+                  queue_id: sentQueueItem.id,
+                  customer_id: sentQueueItem.customer_id,
+                  valor_total: totalVal,
+                  attribution_type: 'whatsapp_recovery',
+                  step_number: stepUsed,
+                  tempo_minutos_ate_conversao: diffMin,
+                  sent_at: sentQueueItem.sent_at,
+                  recovered_at: new Date().toISOString(),
+                }, { onConflict: 'order_id' });
+
+                // Registro do evento de conversão
+                await supabaseAdmin.from('recovery_events').insert({
+                  store_id: sentQueueItem.store_id || storeTargetId,
+                  order_id: orderDbId,
+                  queue_id: sentQueueItem.id,
+                  event_type: 'converted',
+                  channel: 'whatsapp',
+                  step_number: stepUsed,
+                  metadata: { valor_total: totalVal, tempo_minutos: diffMin, step_number: stepUsed },
+                });
+              }
+
+              // 2. Cancela qualquer recuperação pendente e remove agendamentos futuros
+              await supabaseAdmin
+                .from('recovery_queue')
+                .update({
+                  status: 'cancelled',
+                  cancelled_at: new Date().toISOString(),
+                  next_action_at: null,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('order_id', orderDbId)
+                .in('status', ['pending', 'processing']);
+
               const { data: conv } = await supabaseAdmin
                 .from('ai_recovery_conversations')
                 .select('id, status, mensagens')
@@ -289,7 +343,6 @@ export async function executarSincronizacaoShopify(storeIdParam?: string, onlyRe
         // Criação do novo pedido
         const createdIso = shopifyOrder.created_at || new Date().toISOString();
         const enviarNotaEm = new Date(new Date(createdIso).getTime() + 2 * 3600 * 1000).toISOString();
-        const storeTargetId = currentStoreId && currentStoreId !== 'default-store' ? currentStoreId : null;
 
         const { data: newOrder, error: insErr } = await supabaseAdmin
           .from('orders')
@@ -318,20 +371,76 @@ export async function executarSincronizacaoShopify(storeIdParam?: string, onlyRe
           totalCriados++;
           todosResultados.push({ numero_pedido: orderNumber, acao: 'criado', id: orderDbId });
 
-          // Agendar IA para novos pedidos pendentes
+          // Agendar na recovery_queue para novos pedidos pendentes
           if (statusPedido === 'pendente' && cleanPhone) {
             const customerName = shopifyOrder.customer
               ? `${shopifyOrder.customer.first_name || ''} ${shopifyOrder.customer.last_name || ''}`.trim()
               : 'Cliente';
 
-            const { data: dbSettings } = await supabaseAdmin.from('settings').select('key, value');
-            const cfg: Record<string, string> = {};
-            dbSettings?.forEach((s) => {
-              cfg[s.key] = s.value;
-            });
+            let recoveryDelayMinutes = 30;
+            if (storeTargetId) {
+              const { data: step1 } = await supabaseAdmin
+                .from('recovery_steps')
+                .select('delay_minutes')
+                .eq('store_id', storeTargetId)
+                .eq('step_number', 1)
+                .eq('is_active', true)
+                .maybeSingle();
 
-            const aiDelayMinutes = parseInt(cfg['AI_DELAY_MINUTES'] || '15', 10);
-            const agendadoParaRecuperacao = new Date(Date.now() + aiDelayMinutes * 60 * 1000).toISOString();
+              if (step1?.delay_minutes) {
+                recoveryDelayMinutes = Number(step1.delay_minutes);
+              } else {
+                const { data: storeRec } = await supabaseAdmin
+                  .from('stores')
+                  .select('ai_recovery_delay_minutes')
+                  .eq('id', storeTargetId)
+                  .maybeSingle();
+                if (storeRec?.ai_recovery_delay_minutes) {
+                  recoveryDelayMinutes = Number(storeRec.ai_recovery_delay_minutes);
+                }
+              }
+            }
+            const agendadoParaRecuperacao = new Date(Date.now() + recoveryDelayMinutes * 60 * 1000).toISOString();
+
+            const paymentLink = shopifyOrder.order_status_url || shopifyOrder.checkout_url || '';
+
+            const { data: queueInserted } = await supabaseAdmin.from('recovery_queue').insert({
+              store_id: storeTargetId,
+              order_id: orderDbId,
+              customer_id: customerId,
+              status: 'pending',
+              scheduled_at: agendadoParaRecuperacao,
+              current_step: 1,
+              last_sent_step: 0,
+              next_action_at: agendadoParaRecuperacao,
+              attempt_count: 0,
+              metadata: {
+                customer_name: customerName,
+                customer_phone: cleanPhone,
+                numero_pedido: orderNumber,
+                valor_total: totalVal,
+                order_status_url: shopifyOrder.order_status_url || null,
+                checkout_url: shopifyOrder.checkout_url || null,
+                payment_link: paymentLink,
+                itens: shopifyOrder.line_items?.map((item: any) => ({
+                  title: item.title || item.name,
+                  quantity: item.quantity,
+                  price: item.price,
+                })) || [],
+              }
+            }).select('id').single();
+
+            if (queueInserted?.id) {
+              await supabaseAdmin.from('recovery_events').insert({
+                store_id: storeTargetId,
+                order_id: orderDbId,
+                queue_id: queueInserted.id,
+                event_type: 'enqueued',
+                channel: 'whatsapp',
+                step_number: 1,
+                metadata: { valor_total: totalVal, scheduled_at: agendadoParaRecuperacao, step_number: 1 },
+              });
+            }
 
             await supabaseAdmin.from('ai_recovery_conversations').insert({
               store_id: storeTargetId,
@@ -350,7 +459,6 @@ export async function executarSincronizacaoShopify(storeIdParam?: string, onlyRe
         if (!isMock && isNew && orderDbId) {
           const codigo = gerarCodigoRastreio(String(shopifyOrderId));
           const syncAfter = addOneBusinessDay().toISOString();
-          const storeTargetId = currentStoreId && currentStoreId !== 'default-store' ? currentStoreId : null;
 
           await supabaseAdmin.from('trackings').insert({
             order_id: orderDbId,

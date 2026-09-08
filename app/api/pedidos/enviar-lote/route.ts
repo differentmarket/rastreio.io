@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { checkAdminAuth } from '@/lib/authHelper';
+import { validateTenantAccess } from '@/lib/authHelper';
 import { enviarRastreioShopify } from '@/lib/shopifyService';
 
 export const dynamic = 'force-dynamic';
@@ -29,17 +29,23 @@ function passouDelayHoras(orderCreatedAt: string, delayHoras: number): boolean {
 
 export async function POST(req: NextRequest) {
   try {
-    const isAdmin = await checkAdminAuth(req);
-    if (!isAdmin) {
-      return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-    }
-
     const body = await req.json().catch(() => ({}));
     // periodo: 'hoje' | 'ontem' | 'semana' | 'mes' | 'pendentes' | 'todos' | 'exceto_hoje'
     // tipoNotificacao: 'rastreio' | 'nota' | 'ambos'
     // forcarHoje: true = ignora regra de próximo dia útil para rastreio
     const { periodo, tipoNotificacao, forcarHoje = false, orderId = null } = body;
     const tipo = tipoNotificacao || 'ambos';
+
+    const storeIdParam = body.store_id || null;
+
+    // Validação Multi-Tenant estrita
+    const tenant = await validateTenantAccess(req, storeIdParam);
+    if (!tenant.authorized) {
+      return NextResponse.json(
+        { error: 'Acesso negado aos pedidos desta loja.' },
+        { status: tenant.status || 403 }
+      );
+    }
 
     // ── Carregar configurações de disparo ─────────────────────────
     const { data: settings } = await supabaseAdmin.from('settings').select('key, value');
@@ -65,8 +71,6 @@ export async function POST(req: NextRequest) {
     const notaDelayHoras = parseFloat(cfg['NOTA_DELAY_HORAS'] || '2');
     const rastreioProximoDiaUtil = cfg['RASTREIO_PROXIMO_DIA_UTIL'] !== 'false'; // padrão: true
 
-    const storeIdParam = body.store_id || null;
-
     // ── Buscar pedidos (Pedidos elegíveis para envio) ──
     let query = supabaseAdmin.from('orders').select(`
       id, store_id, shopify_order_id, numero_pedido, status_pedido, valor_total,
@@ -76,13 +80,17 @@ export async function POST(req: NextRequest) {
       trackings ( id, codigo_rastreio, status, email_enviado, shopify_synced )
     `);
 
+    // Restrição estrita por tenant
+    if (tenant.targetStoreId) {
+      query = query.eq('store_id', tenant.targetStoreId);
+    } else if (!tenant.isSuperAdmin) {
+      query = query.in('store_id', tenant.allowedStoreIds);
+    }
+
     if (orderId) {
       query = query.eq('id', orderId);
     } else {
       query = query.in('status_pedido', ['pago', 'separacao', 'enviado', 'entregue']);
-      if (storeIdParam && storeIdParam !== 'all' && storeIdParam !== 'default-store') {
-        query = query.eq('store_id', storeIdParam);
-      }
 
       const now = new Date();
       if (periodo === 'hoje') {
@@ -103,15 +111,27 @@ export async function POST(req: NextRequest) {
         const todayStart = getStartOfDay(now).toISOString();
         const twoHoursAgo = new Date(now.getTime() - 2 * 3600 * 1000).toISOString();
 
-        const { data: checkOrders } = await supabaseAdmin.from('orders').select('id').lt('created_at', todayStart).limit(1);
+        let checkQuery = supabaseAdmin.from('orders').select('id').lt('created_at', todayStart);
+        if (tenant.targetStoreId) {
+          checkQuery = checkQuery.eq('store_id', tenant.targetStoreId);
+        } else if (!tenant.isSuperAdmin) {
+          checkQuery = checkQuery.in('store_id', tenant.allowedStoreIds);
+        }
+        const { data: checkOrders } = await checkQuery.limit(1);
+
         if (checkOrders && checkOrders.length > 0) {
           query = query.lt('created_at', todayStart);
         } else {
-          const { data: check2h } = await supabaseAdmin.from('orders').select('id').lt('created_at', twoHoursAgo).limit(1);
+          let check2hQuery = supabaseAdmin.from('orders').select('id').lt('created_at', twoHoursAgo);
+          if (tenant.targetStoreId) {
+            check2hQuery = check2hQuery.eq('store_id', tenant.targetStoreId);
+          } else if (!tenant.isSuperAdmin) {
+            check2hQuery = check2hQuery.in('store_id', tenant.allowedStoreIds);
+          }
+          const { data: check2h } = await check2hQuery.limit(1);
           if (check2h && check2h.length > 0) {
             query = query.lt('created_at', twoHoursAgo);
           }
-          // Se nenhum order tem data antiga (pois foram todos sincronizados recentemente), busca sem restrição estrita de data
         }
       }
     }
@@ -133,8 +153,10 @@ export async function POST(req: NextRequest) {
         trackings ( id, codigo_rastreio, status, email_enviado, shopify_synced )
       `).in('status_pedido', ['pago', 'separacao', 'enviado', 'entregue']);
 
-      if (storeIdParam && storeIdParam !== 'all' && storeIdParam !== 'default-store') {
-        fallbackQuery = fallbackQuery.eq('store_id', storeIdParam);
+      if (tenant.targetStoreId) {
+        fallbackQuery = fallbackQuery.eq('store_id', tenant.targetStoreId);
+      } else if (!tenant.isSuperAdmin) {
+        fallbackQuery = fallbackQuery.in('store_id', tenant.allowedStoreIds);
       }
       const { data: fallbackOrders } = await fallbackQuery;
       if (fallbackOrders && fallbackOrders.length > 0) {

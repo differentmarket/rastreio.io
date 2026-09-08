@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { checkAdminAuth } from '@/lib/authHelper';
+import { validateTenantAccess } from '@/lib/authHelper';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,9 +8,6 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-
-    const isAdmin = await checkAdminAuth(req);
-    if (!isAdmin) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
 
     const body = await req.json().catch(() => ({}));
     const tipo: 'nota' | 'rastreio' | 'ambos' = body.tipo || 'ambos';
@@ -29,6 +26,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     if (error || !order) {
       return NextResponse.json({ error: 'Pedido não encontrado.' }, { status: 404 });
+    }
+
+    // Validação estrita de Tenant antes de enviar e-mails de teste
+    const tenant = await validateTenantAccess(req, order.store_id);
+    if (!tenant.authorized) {
+      return NextResponse.json({ error: 'Acesso negado a este pedido.' }, { status: 403 });
     }
 
     const cust = Array.isArray(order.customers) ? order.customers[0] : order.customers;

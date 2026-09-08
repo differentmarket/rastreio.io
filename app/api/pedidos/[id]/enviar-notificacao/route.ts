@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { checkAdminAuth } from '@/lib/authHelper';
+import { validateTenantAccess } from '@/lib/authHelper';
 import { enviarRastreioShopify } from '@/lib/shopifyService';
 
 export const dynamic = 'force-dynamic';
@@ -11,11 +11,6 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const isAdmin = await checkAdminAuth(req);
-    if (!isAdmin) {
-      return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-    }
-
     const body = await req.json().catch(() => ({}));
     const tipo = body.tipo || 'ambos'; // 'rastreio' | 'nota' | 'ambos'
     const force = body.force || false; // Se true, ignora trava de duplicidade
@@ -61,6 +56,12 @@ export async function POST(
 
     if (error || !order) {
       return NextResponse.json({ error: 'Pedido não encontrado.' }, { status: 404 });
+    }
+
+    // Validação estrita de Tenant antes de enviar e-mails ou acessar dados
+    const tenant = await validateTenantAccess(req, order.store_id);
+    if (!tenant.authorized) {
+      return NextResponse.json({ error: 'Acesso negado a este pedido.' }, { status: 403 });
     }
 
     if (order.status_pedido !== 'pago') {

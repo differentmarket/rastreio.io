@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { checkAdminAuth } from '@/lib/authHelper';
+import { validateTenantAccess } from '@/lib/authHelper';
 import { sendTrackingEmail } from '@/lib/email';
 import { enviarRastreioShopify } from '@/lib/shopifyService';
 
@@ -12,11 +12,6 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-
-    const isAdmin = await checkAdminAuth(req);
-    if (!isAdmin) {
-      return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-    }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     const isMock = supabaseUrl.includes('mock-project');
@@ -74,6 +69,7 @@ export async function POST(
       .from('orders')
       .select(`
         id,
+        store_id,
         shopify_order_id,
         numero_pedido,
         customers ( nome, email ),
@@ -89,6 +85,12 @@ export async function POST(
 
     if (!order) {
       return NextResponse.json({ error: 'Pedido não encontrado.' }, { status: 404 });
+    }
+
+    // Validação estrita de Tenant antes de enviar e-mail de rastreio
+    const tenant = await validateTenantAccess(req, order.store_id);
+    if (!tenant.authorized) {
+      return NextResponse.json({ error: 'Acesso negado a este pedido.' }, { status: 403 });
     }
 
     const customer: any = Array.isArray(order.customers) ? order.customers[0] : order.customers;

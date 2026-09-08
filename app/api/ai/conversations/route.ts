@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { checkAdminAuth } from '@/lib/authHelper';
+import { validateTenantAccess } from '@/lib/authHelper';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
-    const isAdmin = await checkAdminAuth(req);
-    if (!isAdmin) {
-      return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-    }
-
     const { searchParams } = new URL(req.url);
     const storeId = searchParams.get('store_id');
+
+    // Validação estrita de Tenant
+    const tenant = await validateTenantAccess(req, storeId);
+    if (!tenant.authorized) {
+      return NextResponse.json({ error: tenant.error || 'Não autorizado.' }, { status: tenant.status });
+    }
 
     let query = supabaseAdmin
       .from('ai_recovery_conversations')
@@ -20,8 +21,10 @@ export async function GET(req: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(50);
 
-    if (storeId && storeId !== 'all') {
-      query = query.eq('store_id', storeId);
+    if (tenant.targetStoreId) {
+      query = query.eq('store_id', tenant.targetStoreId);
+    } else if (!tenant.isSuperAdmin) {
+      query = query.in('store_id', tenant.allowedStoreIds);
     }
 
     const { data: conversations, error } = await query;

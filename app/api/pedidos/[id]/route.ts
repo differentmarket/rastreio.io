@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { checkAdminAuth } from '@/lib/authHelper';
+import { validateTenantAccess } from '@/lib/authHelper';
 import { descriptografar } from '@/lib/criptografia';
 
 export const dynamic = 'force-dynamic';
@@ -25,10 +25,6 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const isAdmin = await checkAdminAuth(req);
-    if (!isAdmin) {
-      return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-    }
 
     // Bypass com dados mockados para detalhes do pedido
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -112,6 +108,7 @@ export async function GET(
       .from('orders')
       .select(`
         id,
+        store_id,
         shopify_order_id,
         numero_pedido,
         status_pedido,
@@ -156,6 +153,15 @@ export async function GET(
       return NextResponse.json(
         { error: 'Pedido não encontrado.' },
         { status: 404 }
+      );
+    }
+
+    // Validação estrita de Tenant: impede IDOR entre lojas concorrentes
+    const tenant = await validateTenantAccess(req, order.store_id);
+    if (!tenant.authorized) {
+      return NextResponse.json(
+        { error: 'Acesso negado a este pedido.' },
+        { status: 403 }
       );
     }
 

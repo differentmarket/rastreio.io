@@ -1,52 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { checkAdminAuth } from '@/lib/authHelper';
+import { validateTenantAccess } from '@/lib/authHelper';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
-    const isAdmin = await checkAdminAuth(req);
-    if (!isAdmin) {
-      return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+    const storeId = req.nextUrl.searchParams.get('store_id');
+
+    // Validação de acesso ao tenant
+    const tenant = await validateTenantAccess(req, storeId);
+    if (!tenant.authorized) {
+      return NextResponse.json({ error: tenant.error || 'Não autorizado.' }, { status: tenant.status });
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    const storeId = req.nextUrl.searchParams.get('store_id');
-
-    // Obter o email do usuário a partir do token
-    const authHeader = req.headers.get('authorization');
-    const token = authHeader ? authHeader.split(' ')[1] : null;
-    let userEmail = '';
-
-    if (token) {
-      try {
-        const { data: { user } } = await supabaseAdmin.auth.getUser(token);
-        if (user) {
-          userEmail = user.email || '';
-        }
-      } catch (e) {
-        console.error('Erro ao obter usuário a partir do token no fila-emails:', e);
-      }
-    }
-
-    // Validar acesso à loja (se não for mock)
-    if (!supabaseUrl.includes('mock-project')) {
-      if (!storeId) {
-        return NextResponse.json({ error: 'store_id é obrigatório.' }, { status: 400 });
-      }
-
-      const { data: isAssociated, error: assocError } = await supabaseAdmin
-        .from('store_users')
-        .select('id')
-        .eq('store_id', storeId)
-        .eq('user_email', userEmail)
-        .maybeSingle();
-
-      if (assocError || !isAssociated) {
-        return NextResponse.json({ error: 'Acesso negado a esta loja.' }, { status: 403 });
-      }
-    }
 
     // Modo mock
     if (supabaseUrl.includes('mock-project')) {
@@ -156,8 +124,10 @@ export async function GET(req: NextRequest) {
       .in('status_pedido', ['pago', 'separacao', 'enviado', 'entregue'])
       .order('created_at', { ascending: false });
 
-    if (storeId) {
-      query = query.eq('store_id', storeId);
+    if (tenant.targetStoreId) {
+      query = query.eq('store_id', tenant.targetStoreId);
+    } else if (!tenant.isSuperAdmin) {
+      query = query.in('store_id', tenant.allowedStoreIds);
     }
 
     const { data: orders, error } = await query;

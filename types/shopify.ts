@@ -41,4 +41,6 @@ export interface ShopifyOrderWebhook {
   note_attributes?: ShopifyNoteAttribute[];
   financial_status?: string;
   fulfillment_status?: string;
+  order_status_url?: string;
+  checkout_url?: string;
 }

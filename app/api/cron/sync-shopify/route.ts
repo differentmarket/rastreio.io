@@ -21,7 +21,33 @@ export async function GET(req: NextRequest) {
   try {
     const agoraIso = new Date().toISOString();
 
-    // 0. Sincronizar automaticamente novos pedidos da Shopify (modo otimizado)
+    // 0. Autenticação e proteção do Cron
+    const authHeader = req.headers.get('authorization');
+    const cronSecretHeader = authHeader?.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
+    const isVercelCron = Boolean(req.headers.get('x-vercel-cron'));
+
+    const { data: cronSettings } = await supabaseAdmin.from('settings').select('value').eq('key', 'CRON_SECRET').maybeSingle();
+    const expectedCronSecret = process.env.CRON_SECRET || cronSettings?.value || null;
+
+    let isCronAuthorized = false;
+    if (expectedCronSecret && cronSecretHeader === expectedCronSecret) {
+      isCronAuthorized = true;
+    } else if (isVercelCron) {
+      isCronAuthorized = true;
+    } else {
+      // Fallback: verificar se é chamada por admin autenticado via cookie de sessão
+      const { checkAdminAuth } = await import('@/lib/authHelper');
+      const isAdmin = await checkAdminAuth(req);
+      if (isAdmin) {
+        isCronAuthorized = true;
+      }
+    }
+
+    if (expectedCronSecret && !isCronAuthorized) {
+      return NextResponse.json({ error: 'Não autorizado para executar o cron job.' }, { status: 401 });
+    }
+
+    // 1. Sincronizar automaticamente novos pedidos da Shopify (modo otimizado)
     let resSyncShopify: any = null;
     try {
       resSyncShopify = await executarSincronizacaoShopify(undefined, true);
@@ -29,7 +55,7 @@ export async function GET(req: NextRequest) {
       console.error('Erro na sincronização automática da Shopify no Cron:', syncErr);
     }
 
-    // 1. Carregar configurações gerais do banco
+    // 2. Carregar configurações gerais do banco
     const { data: settings } = await supabaseAdmin.from('settings').select('key, value');
     const cfg: Record<string, string> = {};
     settings?.forEach(s => { cfg[s.key] = s.value; });
@@ -263,58 +289,199 @@ export async function GET(req: NextRequest) {
     }
 
     // -----------------------------------------------------------------
-    // PARTE 3: Processar Disparos de RECUPERAÇÃO DE VENDAS via WhatsApp (IA)
+    // PARTE 3: Processar Disparos de RECUPERAÇÃO DE VENDAS via WhatsApp (Régua Inteligente Follow-ups com Idempotência)
     // -----------------------------------------------------------------
     const resultadosRecuperacao: any[] = [];
-    const { data: pendingConversations, error: convErr } = await supabaseAdmin
-      .from('ai_recovery_conversations')
-      .select('id, store_id, order_id, customer_phone, customer_name, valor_pedido, agendado_para, orders(numero_pedido, status_pedido)')
-      .eq('status', 'pendente_envio')
-      .lte('agendado_para', agoraIso)
-      .limit(10);
+    
+    // 1. Busca itens elegíveis na fila de recuperação recovery_queue
+    // Elegível se status = 'pending' E (next_action_at <= agora OU (next_action_at IS NULL E scheduled_at <= agora))
+    const { data: queueItems, error: queueErr } = await supabaseAdmin
+      .from('recovery_queue')
+      .select('id, store_id, order_id, customer_id, attempt_count, current_step, last_sent_step, next_action_at, scheduled_at, metadata, orders(id, numero_pedido, status_pedido, valor_total, itens, raw_payload, store_id)')
+      .eq('status', 'pending')
+      .or(`next_action_at.lte.${agoraIso},and(next_action_at.is.null,scheduled_at.lte.${agoraIso})`)
+      .limit(15);
 
-    if (convErr) {
-      console.error('Erro ao buscar recuperações de IA agendadas:', convErr);
-    } else if (pendingConversations && pendingConversations.length > 0) {
-      for (const conv of pendingConversations) {
-        const orderObj: any = Array.isArray(conv.orders) ? conv.orders[0] : conv.orders;
+    if (queueErr) {
+      console.error('Erro ao buscar recovery_queue agendada:', queueErr);
+    } else if (queueItems && queueItems.length > 0) {
+      for (const item of queueItems) {
+        // LOCK DE IDEMPOTÊNCIA ATÔMICO
+        // Garante que mesmo se duas instâncias do cron executarem ao mesmo tempo,
+        // apenas UMA conseguirá transicionar de 'pending' para 'processing'
+        const { data: lockedItem, error: lockErr } = await supabaseAdmin
+          .from('recovery_queue')
+          .update({
+            status: 'processing',
+            attempt_count: (item.attempt_count || 0) + 1,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', item.id)
+          .eq('status', 'pending')
+          .select('id')
+          .maybeSingle();
+
+        if (lockErr || !lockedItem) {
+          // Outro worker concorrente assumiu o item, pula para evitar duplicidade
+          continue;
+        }
+
+        const orderObj: any = Array.isArray(item.orders) ? item.orders[0] : item.orders;
         const statusPedido = orderObj?.status_pedido || 'pendente';
-        const numPedido = orderObj?.numero_pedido || '';
+        const numPedido = orderObj?.numero_pedido || item.metadata?.numero_pedido || '';
 
         // Se o pedido foi pago entre o agendamento e o disparo, cancela o disparo
         if (statusPedido === 'pago') {
           await supabaseAdmin
-            .from('ai_recovery_conversations')
-            .update({ status: 'cancelado_ja_pago' })
-            .eq('id', conv.id);
-          resultadosRecuperacao.push({ id: conv.id, status: 'cancelado_ja_pago' });
+            .from('recovery_queue')
+            .update({
+              status: 'cancelled',
+              cancelled_at: new Date().toISOString(),
+              next_action_at: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', item.id);
+          resultadosRecuperacao.push({ id: item.id, status: 'cancelled_already_paid' });
           continue;
         }
 
-        // Buscar dados da loja para Evolution API
-        let { data: store } = await supabaseAdmin
-          .from('stores')
-          .select('nome_loja, evolution_api_url, evolution_api_key, evolution_instance_name, ai_recovery_enabled')
-          .eq('id', conv.store_id)
-          .maybeSingle();
-
-        if (!store) {
-          const { data: defaultStore } = await supabaseAdmin.from('stores').select('*').eq('status', 'ativa').limit(1).maybeSingle();
-          store = defaultStore;
+        // Isolamento Multi-Tenant estrito: validar store_id e impedir contaminação cruzada
+        if (!item.store_id || (orderObj?.store_id && orderObj.store_id !== item.store_id)) {
+          await supabaseAdmin
+            .from('recovery_queue')
+            .update({
+              status: 'failed',
+              next_action_at: null,
+              updated_at: new Date().toISOString(),
+              metadata: { ...(item.metadata || {}), error: 'Tenant mismatch' },
+            })
+            .eq('id', item.id);
+          continue;
         }
 
-        const apiUrl = store?.evolution_api_url || process.env.EVOLUTION_API_URL;
-        const apiSecret = store?.evolution_api_key || process.env.EVOLUTION_API_KEY;
-        const instName = store?.evolution_instance_name || process.env.EVOLUTION_INSTANCE_NAME;
+        const { data: store } = await supabaseAdmin
+          .from('stores')
+          .select('nome_loja, evolution_api_url, evolution_api_key, evolution_instance_name, ai_recovery_enabled, ai_initial_message, ai_coupon_code, ai_recovery_delay_minutes')
+          .eq('id', item.store_id)
+          .maybeSingle();
 
-        const customerFirstName = (conv.customer_name || 'Cliente').split(' ')[0];
-        const storeName = store?.nome_loja || empresaNome;
+        if (!store || store.ai_recovery_enabled === false) {
+          await supabaseAdmin
+            .from('recovery_queue')
+            .update({
+              status: 'cancelled',
+              cancelled_at: new Date().toISOString(),
+              next_action_at: null,
+              updated_at: new Date().toISOString(),
+              metadata: { ...(item.metadata || {}), reason: 'Store recovery disabled' },
+            })
+            .eq('id', item.id);
+          continue;
+        }
 
-        const initialMsg = `Olá ${customerFirstName}! 🛒 Vi que você gerou o pedido #${numPedido} na ${storeName}, mas o pagamento não foi concluído. Precisa de ajuda com o Pix ou Cartão? Estamos à disposição!`;
+        // Determinar o passo atual da sequência (1 a 5)
+        const currentStepNum = Number(item.current_step) || 1;
+
+        // Buscar configuração do step na tabela recovery_steps
+        const { data: stepConfig } = await supabaseAdmin
+          .from('recovery_steps')
+          .select('*')
+          .eq('store_id', item.store_id)
+          .eq('step_number', currentStepNum)
+          .eq('is_active', true)
+          .maybeSingle();
+
+        // Se o passo atual não existe e currentStepNum > 1, significa que a régua terminou
+        if (!stepConfig && currentStepNum > 1) {
+          await supabaseAdmin
+            .from('recovery_queue')
+            .update({
+              status: 'completed',
+              next_action_at: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', item.id);
+          resultadosRecuperacao.push({ id: item.id, status: 'sequence_finished' });
+          continue;
+        }
+
+        const apiUrl = store.evolution_api_url || process.env.EVOLUTION_API_URL;
+        const apiSecret = store.evolution_api_key || process.env.EVOLUTION_API_KEY;
+        const instName = store.evolution_instance_name || process.env.EVOLUTION_INSTANCE_NAME;
+
+        const customerPhone = item.metadata?.customer_phone;
+        const customerFullName = item.metadata?.customer_name || 'Cliente';
+        const customerFirstName = customerFullName.split(' ')[0] || 'Cliente';
+        const storeName = store.nome_loja || empresaNome;
+
+        // Links de pagamento oficiais: apenas order_status_url ou checkout_url original
+        const paymentLink = item.metadata?.order_status_url 
+          || orderObj?.raw_payload?.order_status_url 
+          || item.metadata?.checkout_url 
+          || orderObj?.raw_payload?.checkout_url 
+          || item.metadata?.payment_link 
+          || '';
+
+        const valNum = Number(orderObj?.valor_total || item.metadata?.valor_total || 0);
+        const valorFormatado = `R$ ${valNum.toFixed(2)}`;
+
+        const rawItens = orderObj?.itens || item.metadata?.itens || [];
+        const itensFormatados = Array.isArray(rawItens) && rawItens.length > 0
+          ? rawItens.map((i: any) => `${i.title || i.name || 'Produto'} (x${i.quantity || 1})`).join(', ')
+          : 'Itens do seu pedido';
+
+        // Definir template, cupom e delay específicos do passo ou fallback
+        const defaultTemplate = `Olá {primeiro_nome}! 🛒 Vi que você iniciou o pedido {numero_pedido} na {nome_loja}, mas o pagamento ainda não foi concluído.\n\nPara garantir seus itens, você pode concluir seu pedido pelo link seguro:\n👉 {link_pagamento}\n\nQualquer dúvida com Pix ou Cartão, é só responder aqui!`;
+        
+        const templateUsed = stepConfig?.template_text || store.ai_initial_message || defaultTemplate;
+        const couponUsed = stepConfig?.coupon_code || store.ai_coupon_code || '';
+        const delayUsed = stepConfig?.delay_minutes || store.ai_recovery_delay_minutes || 30;
+
+        // SNAPSHOT DE MENSAGEM ENVIADA
+        // Salvar snapshot antes do disparo para imutabilidade do histórico e atribuição
+        const stepSnapshot = {
+          step_number: currentStepNum,
+          template_used: templateUsed,
+          coupon_used: couponUsed,
+          delay_used: delayUsed,
+          captured_at: new Date().toISOString(),
+        };
+
+        const currentMeta = item.metadata || {};
+        const previousSnapshots = Array.isArray(currentMeta.snapshots) ? currentMeta.snapshots : [];
+        const updatedMeta = {
+          ...currentMeta,
+          step_number: currentStepNum,
+          template_used: templateUsed,
+          coupon_used: couponUsed,
+          delay_used: delayUsed,
+          last_snapshot: stepSnapshot,
+          snapshots: [...previousSnapshots, stepSnapshot],
+        };
+
+        await supabaseAdmin
+          .from('recovery_queue')
+          .update({
+            metadata: updatedMeta,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', item.id);
+
+        const cupomTexto = couponUsed ? `Use o cupom especial *${couponUsed}* para desconto!` : '';
+
+        // Montagem da mensagem com substituição de tags dinâmicas
+        let finalMsg = templateUsed
+          .replace(/{primeiro_nome}/g, customerFirstName)
+          .replace(/{numero_pedido}/g, numPedido ? `#${numPedido}` : '')
+          .replace(/{nome_loja}/g, storeName)
+          .replace(/{link_pagamento}/g, paymentLink)
+          .replace(/{cupom}/g, cupomTexto)
+          .replace(/{valor_pedido}/g, valorFormatado)
+          .replace(/{itens_pedido}/g, itensFormatados);
 
         let enviouWa = false;
 
-        if (apiUrl && apiSecret && instName && conv.customer_phone) {
+        if (apiUrl && apiSecret && instName && customerPhone) {
           try {
             const waRes = await fetch(`${apiUrl.replace(/\/$/, '')}/message/sendText/${instName}`, {
               method: 'POST',
@@ -323,38 +490,146 @@ export async function GET(req: NextRequest) {
                 'apikey': apiSecret,
               },
               body: JSON.stringify({
-                number: conv.customer_phone,
-                text: initialMsg,
+                number: customerPhone,
+                text: finalMsg,
                 delay: 1000,
               }),
             });
             if (waRes.ok) enviouWa = true;
           } catch (errWa: any) {
-            console.error(`Erro ao enviar mensagem no WhatsApp para ${conv.customer_phone}:`, errWa);
+            console.error(`Erro ao enviar mensagem no WhatsApp para ${customerPhone}:`, errWa);
           }
         }
 
-        // Atualizar a conversa para em_andamento
-        const initialMensagens = [
-          { sender: 'ai', text: initialMsg, timestamp: new Date().toISOString() }
-        ];
+        if (enviouWa) {
+          const sentTimestamp = new Date().toISOString();
 
-        await supabaseAdmin
-          .from('ai_recovery_conversations')
-          .update({
-            status: 'em_andamento',
-            mensagens: initialMensagens,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', conv.id);
+          // Registra evento 'step_sent' em recovery_events
+          await supabaseAdmin.from('recovery_events').insert({
+            store_id: item.store_id,
+            order_id: item.order_id,
+            queue_id: item.id,
+            event_type: 'step_sent',
+            channel: stepConfig?.channel || 'whatsapp',
+            step_number: currentStepNum,
+            metadata: {
+              phone: customerPhone,
+              pedido: numPedido,
+              valor: valNum,
+              step_number: currentStepNum,
+              snapshot: stepSnapshot,
+            },
+            created_at: sentTimestamp,
+          });
 
-        resultadosRecuperacao.push({
-          id: conv.id,
-          phone: conv.customer_phone,
-          pedido: numPedido,
-          enviouWa,
-          status: 'em_andamento',
-        });
+          // Atualiza ou cria conversa no ai_recovery_conversations para histórico de atendimento
+          const initialMensagens = [
+            { sender: 'ai', text: finalMsg, timestamp: sentTimestamp }
+          ];
+
+          await supabaseAdmin
+            .from('ai_recovery_conversations')
+            .upsert({
+              store_id: item.store_id,
+              order_id: item.order_id,
+              customer_phone: customerPhone,
+              customer_name: customerFullName,
+              valor_pedido: valNum,
+              status: 'em_andamento',
+              mensagens: initialMensagens,
+              updated_at: sentTimestamp,
+            }, { onConflict: 'order_id' });
+
+          // Verificar se existe um próximo passo na régua (máximo de 5 passos)
+          const nextStepNum = currentStepNum + 1;
+          let nextStepConfig = null;
+
+          if (nextStepNum <= 5) {
+            const { data: nxt } = await supabaseAdmin
+              .from('recovery_steps')
+              .select('*')
+              .eq('store_id', item.store_id)
+              .eq('step_number', nextStepNum)
+              .eq('is_active', true)
+              .maybeSingle();
+            nextStepConfig = nxt;
+          }
+
+          if (nextStepConfig) {
+            // Há um próximo passo: avança current_step e agenda next_action_at mantendo status 'pending'
+            const nextDelayMin = Number(nextStepConfig.delay_minutes) || 60;
+            const nextActionAt = new Date(Date.now() + nextDelayMin * 60 * 1000).toISOString();
+
+            await supabaseAdmin
+              .from('recovery_queue')
+              .update({
+                status: 'pending',
+                last_sent_step: currentStepNum,
+                current_step: nextStepNum,
+                next_action_at: nextActionAt,
+                sent_at: sentTimestamp,
+                updated_at: sentTimestamp,
+              })
+              .eq('id', item.id);
+
+            resultadosRecuperacao.push({
+              id: item.id,
+              order_id: item.order_id,
+              stepSent: currentStepNum,
+              nextStep: nextStepNum,
+              nextActionAt,
+              status: 'pending_next_step',
+            });
+          } else {
+            // Régua finalizada: marca como 'completed' (todos os passos executados)
+            await supabaseAdmin
+              .from('recovery_queue')
+              .update({
+                status: 'completed',
+                last_sent_step: currentStepNum,
+                next_action_at: null,
+                sent_at: sentTimestamp,
+                updated_at: sentTimestamp,
+              })
+              .eq('id', item.id);
+
+            resultadosRecuperacao.push({
+              id: item.id,
+              order_id: item.order_id,
+              stepSent: currentStepNum,
+              status: 'completed',
+            });
+          }
+        } else {
+          // Se falhou envio, marca como 'failed'
+          await supabaseAdmin
+            .from('recovery_queue')
+            .update({
+              status: 'failed',
+              updated_at: new Date().toISOString(),
+              metadata: { ...(item.metadata || {}), last_error: 'Falha no disparo WhatsApp Evolution' },
+            })
+            .eq('id', item.id);
+
+          await supabaseAdmin.from('recovery_events').insert({
+            store_id: item.store_id,
+            order_id: item.order_id,
+            queue_id: item.id,
+            event_type: 'step_failed',
+            channel: stepConfig?.channel || 'whatsapp',
+            step_number: currentStepNum,
+            metadata: { error: 'Falha no disparo WhatsApp Evolution', step_number: currentStepNum },
+          });
+
+          resultadosRecuperacao.push({
+            id: item.id,
+            order_id: item.order_id,
+            phone: customerPhone,
+            pedido: numPedido,
+            stepNumber: currentStepNum,
+            status: 'failed',
+          });
+        }
       }
     }
 
