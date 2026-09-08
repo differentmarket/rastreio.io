@@ -296,6 +296,13 @@ export async function PUT(req: NextRequest) {
     delete updateFields.shopify_domain;
     delete updateFields.shopify_access_token;
 
+    // Trava de isolamento: WAHA nunca entra na tabela stores
+    delete updateFields.waha_api_url;
+    delete updateFields.waha_api_key;
+    delete updateFields.waha_session_name;
+    delete updateFields.waha_instance_name;
+    delete updateFields.whatsapp_provider;
+
     // Se algum segredo veio mascarado ("••••••••"), deleta o campo para preservar o valor real existente no banco
     for (const field of STORE_SECRET_FIELDS) {
       if (isMaskedValue(updateFields[field])) {

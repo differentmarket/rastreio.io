@@ -132,9 +132,18 @@ export default function AdminClient() {
   const [bannerUrl, setBannerUrl] = useState('');
   const [bannerLink, setBannerLink] = useState('');
   const [whatsappSuporte, setWhatsappSuporte] = useState('');
+  // WhatsApp Multi-Provider (Evolution API e WAHA)
+  const [whatsappProvider, setWhatsappProvider] = useState<'evolution' | 'waha'>('evolution');
   const [evolutionApiUrl, setEvolutionApiUrl] = useState('');
   const [evolutionApiKey, setEvolutionApiKey] = useState('');
   const [evolutionInstanceName, setEvolutionInstanceName] = useState('');
+  const [wahaApiUrl, setWahaApiUrl] = useState('');
+  const [wahaApiKey, setWahaApiKey] = useState('');
+  const [wahaSessionName, setWahaSessionName] = useState('');
+  const [wahaStatus, setWahaStatus] = useState<'active' | 'inactive'>('active');
+  const [activeWhatsappConnection, setActiveWhatsappConnection] = useState<any>(null);
+  const [testingWhatsapp, setTestingWhatsapp] = useState(false);
+  const [whatsappTestResult, setWhatsappTestResult] = useState<{ success: boolean; message: string; details?: any } | null>(null);
   const [whatsappEnabled, setWhatsappEnabled] = useState(false);
   const [aiRecoveryEnabled, setAiRecoveryEnabled] = useState(false);
   const [openaiApiKey, setOpenaiApiKey] = useState('');
@@ -516,6 +525,7 @@ export default function AdminClient() {
     fetchOrders(store ? store.id : 'all');
     if (store) {
       fetchStoreMembers(store.id);
+      fetchWhatsappConnections(store.id);
     }
   };
 
@@ -529,6 +539,113 @@ export default function AdminClient() {
       }
     } catch { /* silent */ } finally {
       setLoadingMembers(false);
+    }
+  };
+
+  const fetchWhatsappConnections = async (storeId: string) => {
+    try {
+      const res = await fetch(`/api/whatsapp/connections?store_id=${storeId}`, { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        const connections = data.connections || [];
+        const wahaConn = connections.find((c: any) => c.provider === 'waha');
+        const evoConn = connections.find((c: any) => c.provider === 'evolution');
+
+        if (wahaConn) {
+          setWahaApiUrl(wahaConn.api_url || '');
+          setWahaSessionName(wahaConn.instance_name || '');
+          setWahaApiKey(wahaConn.credentials?.api_key || '');
+          setWahaStatus(wahaConn.status || 'active');
+        } else {
+          setWahaApiUrl('');
+          setWahaSessionName('');
+          setWahaApiKey('');
+          setWahaStatus('active');
+        }
+
+        if (evoConn) {
+          setEvolutionApiUrl(evoConn.api_url || '');
+          setEvolutionInstanceName(evoConn.instance_name || '');
+          setEvolutionApiKey(evoConn.credentials?.api_key || '');
+        }
+
+        const activeConn = connections.find((c: any) => c.is_default && c.status === 'active') ||
+                           connections.find((c: any) => c.status === 'active') ||
+                           connections[0];
+
+        if (activeConn) {
+          setActiveWhatsappConnection(activeConn);
+          setWhatsappProvider(activeConn.provider === 'waha' ? 'waha' : 'evolution');
+          setWhatsappEnabled(activeConn.status === 'active');
+        } else if (data.legacy_evolution?.evolution_api_url) {
+          setActiveWhatsappConnection({
+            provider: 'evolution',
+            instance_name: data.legacy_evolution.evolution_instance_name,
+            api_url: data.legacy_evolution.evolution_api_url,
+            status: data.legacy_evolution.whatsapp_enabled ? 'active' : 'inactive',
+          });
+          setWhatsappProvider('evolution');
+          setWhatsappEnabled(Boolean(data.legacy_evolution.whatsapp_enabled));
+        } else {
+          setActiveWhatsappConnection(null);
+        }
+      }
+    } catch {
+      // silent
+    }
+  };
+
+  const handleTestWhatsappConnection = async () => {
+    if (!activeStore) return;
+    setTestingWhatsapp(true);
+    setWhatsappTestResult(null);
+
+    try {
+      const isWaha = whatsappProvider === 'waha';
+      const apiUrl = isWaha ? wahaApiUrl : evolutionApiUrl;
+      const instanceName = isWaha ? wahaSessionName : evolutionInstanceName;
+      const apiKey = isWaha ? wahaApiKey : evolutionApiKey;
+
+      if (!apiUrl) {
+        setWhatsappTestResult({
+          success: false,
+          message: `Por favor, preencha a URL da API do ${isWaha ? 'WAHA' : 'Evolution API'}.`,
+        });
+        return;
+      }
+
+      const res = await fetch('/api/whatsapp/connections/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          store_id: activeStore.id,
+          provider: whatsappProvider,
+          api_url: apiUrl,
+          instance_name: instanceName,
+          api_key: apiKey,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setWhatsappTestResult({
+          success: true,
+          message: data.message || `Conexão ${isWaha ? 'WAHA' : 'Evolution'} OK!`,
+          details: data.details,
+        });
+      } else {
+        setWhatsappTestResult({
+          success: false,
+          message: data.message || data.error || 'Falha ao conectar.',
+        });
+      }
+    } catch (err: any) {
+      setWhatsappTestResult({
+        success: false,
+        message: err.message || 'Erro inesperado ao testar conexão.',
+      });
+    } finally {
+      setTestingWhatsapp(false);
     }
   };
 
@@ -713,6 +830,7 @@ export default function AdminClient() {
 
         setResendFromEmail(activeStore.resend_from_email || data.RESEND_FROM_EMAIL || '');
         setResendApiKey(activeStore.resend_api_key || data.RESEND_API_KEY || '');
+        fetchWhatsappConnections(activeStore.id);
       }
     } catch (err: any) {
       setSettingsError(err.message || 'Erro ao carregar configurações.');
@@ -1250,9 +1368,15 @@ export default function AdminClient() {
             banner_url: bannerUrl,
             banner_link: bannerLink,
             whatsapp_suporte: whatsappSuporte,
-            evolution_api_url: evolutionApiUrl,
-            evolution_api_key: evolutionApiKey,
-            evolution_instance_name: evolutionInstanceName,
+            ...(whatsappProvider === 'evolution' ? {
+              evolution_api_url: evolutionApiUrl,
+              evolution_api_key: evolutionApiKey,
+              evolution_instance_name: evolutionInstanceName,
+            } : {
+              evolution_api_url: activeStore.evolution_api_url,
+              evolution_api_key: activeStore.evolution_api_key,
+              evolution_instance_name: activeStore.evolution_instance_name,
+            }),
             whatsapp_enabled: whatsappEnabled,
             ai_recovery_enabled: aiRecoveryEnabled,
             openai_api_key: openaiApiKey,
@@ -1343,6 +1467,40 @@ export default function AdminClient() {
           resend_api_key: resendApiKey,
         }) : null);
         fetchStores();
+
+        // Persistência oficial no public.whatsapp_connections
+        if (whatsappProvider === 'waha' && wahaApiUrl && wahaSessionName) {
+          await fetch('/api/whatsapp/connections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({
+              store_id: activeStore.id,
+              provider: 'waha',
+              instance_name: wahaSessionName,
+              api_url: wahaApiUrl,
+              api_key: wahaApiKey,
+              status: whatsappEnabled ? 'active' : 'inactive',
+              is_default: true,
+              priority: 1,
+            }),
+          });
+        } else if (whatsappProvider === 'evolution' && evolutionApiUrl && evolutionInstanceName) {
+          await fetch('/api/whatsapp/connections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({
+              store_id: activeStore.id,
+              provider: 'evolution',
+              instance_name: evolutionInstanceName,
+              api_url: evolutionApiUrl,
+              api_key: evolutionApiKey,
+              status: whatsappEnabled ? 'active' : 'inactive',
+              is_default: true,
+              priority: 1,
+            }),
+          });
+        }
+        await fetchWhatsappConnections(activeStore.id);
       }
 
       setSettingsSuccess(true);
@@ -3337,26 +3495,235 @@ export default function AdminClient() {
                   </div>
                 </div>
 
-                {/* ═══════ CARD 11: WhatsApp (Evolution API) ═══════ */}
+                {/* ═══════ CARD 11: WhatsApp (Multi-Provider) ═══════ */}
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-                  <div className="px-6 py-4 bg-gradient-to-r from-green-600/10 to-lime-600/5 border-b border-slate-800 flex items-center justify-between">
+                  <div className="px-6 py-4 bg-gradient-to-r from-green-600/10 to-lime-600/5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="p-2.5 rounded-xl bg-green-500/15 text-green-400 border border-green-500/20"><MessageSquare className="w-5 h-5" /></div>
+                      <div className="p-2.5 rounded-xl bg-green-500/15 text-green-400 border border-green-500/20">
+                        <MessageSquare className="w-5 h-5" />
+                      </div>
                       <div>
-                        <h3 className="text-sm font-extrabold text-white">WhatsApp (Evolution API)</h3>
-                        <p className="text-[10px] text-slate-400">Disparo automático de mensagens ao cliente</p>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-extrabold text-white">WhatsApp</h3>
+                          {activeWhatsappConnection && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              {activeWhatsappConnection.provider === 'waha' ? 'WAHA' : 'Evolution API'}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-400">Disparo automático de mensagens e integração com IA</p>
                       </div>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                      <input type="checkbox" checked={whatsappEnabled} onChange={e => setWhatsappEnabled(e.target.checked)} className="sr-only peer" />
-                      <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
-                    </label>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-semibold text-slate-400">
+                        {whatsappEnabled ? 'WhatsApp Ativo' : 'WhatsApp Desativado'}
+                      </span>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={whatsappEnabled}
+                          onChange={e => setWhatsappEnabled(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                      </label>
+                    </div>
                   </div>
-                  <div className="p-6 space-y-4">
-                    <SettingsInput label="Evolution API URL" value={evolutionApiUrl} onChange={setEvolutionApiUrl} placeholder="https://api.evolution.suaempresa.com" hint="Endereço base do seu servidor." />
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <SettingsInput label="API Key" value={evolutionApiKey} onChange={setEvolutionApiKey} placeholder="Chave de API" type="password" mono />
-                      <SettingsInput label="Nome da Instância" value={evolutionInstanceName} onChange={setEvolutionInstanceName} placeholder="instancia-loja-01" hint="Instância conectada ao WhatsApp." />
+
+                  <div className="p-6 space-y-6">
+                    {/* Seletor de Provedor */}
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                        Selecione o Provedor
+                      </label>
+                      <div className="grid grid-cols-2 gap-3 max-w-md">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWhatsappProvider('evolution');
+                            setWhatsappTestResult(null);
+                          }}
+                          className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all border ${
+                            whatsappProvider === 'evolution'
+                              ? 'bg-green-600 text-white border-green-500 shadow-lg shadow-green-600/20'
+                              : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-white'
+                          }`}
+                        >
+                          <Zap className="w-4 h-4" />
+                          Evolution API
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWhatsappProvider('waha');
+                            setWhatsappTestResult(null);
+                          }}
+                          className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all border ${
+                            whatsappProvider === 'waha'
+                              ? 'bg-green-600 text-white border-green-500 shadow-lg shadow-green-600/20'
+                              : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-white'
+                          }`}
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                          WAHA
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Formulário Provedor Evolution API */}
+                    {whatsappProvider === 'evolution' && (
+                      <div className="space-y-4 pt-2 border-t border-slate-800/80">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-300">Configurações da Evolution API</span>
+                          <span className="text-[11px] text-slate-500">Mantenha seus dados legados salvos com segurança</span>
+                        </div>
+                        <SettingsInput
+                          label="Evolution API URL"
+                          value={evolutionApiUrl}
+                          onChange={setEvolutionApiUrl}
+                          placeholder="https://api.evolution.suaempresa.com"
+                          hint="Endereço base do seu servidor Evolution API."
+                        />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <SettingsInput
+                            label="API Key"
+                            value={evolutionApiKey}
+                            onChange={setEvolutionApiKey}
+                            placeholder="Chave de API (••••••••)"
+                            type="password"
+                            mono
+                            hint="Nunca exposta após o salvamento."
+                          />
+                          <SettingsInput
+                            label="Nome da Instância"
+                            value={evolutionInstanceName}
+                            onChange={setEvolutionInstanceName}
+                            placeholder="instancia-loja-01"
+                            hint="Nome exato da instância no Evolution."
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Formulário Provedor WAHA */}
+                    {whatsappProvider === 'waha' && (
+                      <div className="space-y-4 pt-2 border-t border-slate-800/80">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-300">Configurações do WAHA (WhatsApp HTTP API)</span>
+                          <span className="text-[11px] text-slate-500">Conexão oficial via public.whatsapp_connections</span>
+                        </div>
+                        <SettingsInput
+                          label="WAHA API URL"
+                          value={wahaApiUrl}
+                          onChange={setWahaApiUrl}
+                          placeholder="https://waha.vps11349.panel.icontainer.online"
+                          hint="Endereço base do seu servidor WAHA (sem barra no final)."
+                        />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <SettingsInput
+                            label="API Key"
+                            value={wahaApiKey}
+                            onChange={setWahaApiKey}
+                            placeholder="x-api-key do WAHA (••••••••••••)"
+                            type="password"
+                            mono
+                            hint="Se não alterar, a chave salva será preservada."
+                          />
+                          <SettingsInput
+                            label="Nome da Sessão"
+                            value={wahaSessionName}
+                            onChange={setWahaSessionName}
+                            placeholder="default"
+                            hint="Nome exato da sessão criada no dashboard do WAHA."
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Botão de Teste de Conexão */}
+                    <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-slate-800">
+                      <button
+                        type="button"
+                        onClick={handleTestWhatsappConnection}
+                        disabled={testingWhatsapp}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-all disabled:opacity-50 border border-slate-700"
+                      >
+                        {testingWhatsapp ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-green-400" />
+                            <span>Testando {whatsappProvider === 'waha' ? 'WAHA' : 'Evolution'}...</span>
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="w-4 h-4 text-green-400" />
+                            <span>Testar conexão</span>
+                          </>
+                        )}
+                      </button>
+
+                      {whatsappTestResult && (
+                        <div
+                          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold border ${
+                            whatsappTestResult.success
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                              : 'bg-red-500/10 text-red-400 border-red-500/30'
+                          }`}
+                        >
+                          {whatsappTestResult.success ? (
+                            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                          ) : (
+                            <XCircle className="w-4 h-4 shrink-0 text-red-400" />
+                          )}
+                          <span>{whatsappTestResult.message}</span>
+                          {whatsappTestResult.details && (
+                            <span className="text-[10px] text-slate-400 ml-1">
+                              ({whatsappTestResult.details.version} - {whatsappTestResult.details.engine})
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Área de Status do WhatsApp */}
+                    <div className="bg-slate-950/80 border border-slate-800/90 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                          Status da Conexão
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          Prioridade e roteamento automático
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
+                          <span className="text-[10px] text-slate-500 block">Provedor</span>
+                          <span className="font-bold text-white uppercase">
+                            {whatsappProvider === 'waha' ? 'WAHA' : 'Evolution API'}
+                          </span>
+                        </div>
+                        <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
+                          <span className="text-[10px] text-slate-500 block">
+                            {whatsappProvider === 'waha' ? 'Sessão' : 'Instância'}
+                          </span>
+                          <span className="font-bold text-white font-mono">
+                            {whatsappProvider === 'waha'
+                              ? (wahaSessionName || activeWhatsappConnection?.instance_name || 'default')
+                              : (evolutionInstanceName || activeWhatsappConnection?.instance_name || 'Não configurada')}
+                          </span>
+                        </div>
+                        <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
+                          <span className="text-[10px] text-slate-500 block">Status</span>
+                          <span
+                            className={`font-bold ${
+                              whatsappEnabled ? 'text-emerald-400' : 'text-slate-500'
+                            }`}
+                          >
+                            {whatsappEnabled ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
