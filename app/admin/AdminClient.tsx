@@ -739,8 +739,14 @@ export default function AdminClient() {
     setLoadingSettings(true);
     setSettingsError(null);
     try {
-      const res = await fetch('/api/settings', { headers: getAuthHeaders() });
+      const storeParam = activeStore?.id ? `?store_id=${activeStore.id}` : '';
+      const res = await fetch(`/api/settings${storeParam}`, { headers: getAuthHeaders() });
       if (!res.ok) {
+        if (res.status === 403 && activeStore) {
+          // Usuário é owner da loja: configurações da loja carregam via activeStore
+          fetchWhatsappConnections(activeStore.id);
+          return;
+        }
         const errJson = await res.json().catch(() => ({}));
         throw new Error(errJson.error || 'Falha ao carregar configurações.');
       }
@@ -1316,10 +1322,12 @@ export default function AdminClient() {
     setSettingsError(null);
     setSettingsSuccess(false);
     try {
-      const res = await fetch('/api/settings', {
+      const storeParam = activeStore?.id ? `?store_id=${activeStore.id}` : '';
+      const res = await fetch(`/api/settings${storeParam}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
+          store_id: activeStore?.id,
           SHOPIFY_STORE_DOMAIN: shopifyDomain,
           SHOPIFY_ADMIN_TOKEN: shopifyToken,
           SHOPIFY_WEBHOOK_SECRET: shopifyWebhookSecret,
@@ -1355,7 +1363,10 @@ export default function AdminClient() {
           OPENAI_API_KEY: openaiApiKey,
         }),
       });
-      if (!res.ok) throw new Error('Erro ao salvar.');
+      if (!res.ok && (!activeStore || res.status !== 403)) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Erro ao salvar.');
+      }
 
       if (activeStore) {
         const storeRes = await fetch('/api/stores', {

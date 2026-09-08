@@ -20,13 +20,21 @@ function isMaskedValue(val: any): boolean {
 
 export async function GET(req: NextRequest) {
   try {
-    const tenant = await validateTenantAccess(req, null);
+    const { searchParams } = new URL(req.url);
+    const targetStoreId = searchParams.get('store_id');
+
+    const tenant = await validateTenantAccess(req, targetStoreId);
     if (!tenant.authorized) {
       return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
     }
 
-    // Regra estrita: apenas Superadmin tem acesso às configurações globais do sistema
-    if (!tenant.isSuperAdmin) {
+    // Regra contextual:
+    // Configurações globais -> apenas Superadmin
+    // Configurações contextuais da loja -> Owner da loja alvo
+    // Bloquear: member, viewer ou usuários sem vínculo
+    const isAllowed = tenant.isSuperAdmin || (Boolean(targetStoreId) && tenant.role === 'owner');
+
+    if (!isAllowed) {
       return NextResponse.json(
         { error: 'Acesso negado: apenas superadministradores podem acessar as configurações globais do sistema.' },
         { status: 403 }
@@ -108,20 +116,27 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const tenant = await validateTenantAccess(req, null);
+    const { searchParams } = new URL(req.url);
+    const body = await req.json().catch(() => ({}));
+    const targetStoreId = searchParams.get('store_id') || body.store_id || null;
+
+    const tenant = await validateTenantAccess(req, targetStoreId);
     if (!tenant.authorized) {
       return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
     }
 
-    // Regra estrita: apenas Superadmin pode alterar configurações globais do sistema
-    if (!tenant.isSuperAdmin) {
+    // Regra contextual:
+    // Configurações globais -> apenas Superadmin
+    // Configurações contextuais da loja -> Owner da loja alvo
+    // Bloquear: member, viewer ou usuários sem vínculo
+    const isAllowed = tenant.isSuperAdmin || (Boolean(targetStoreId) && tenant.role === 'owner');
+
+    if (!isAllowed) {
       return NextResponse.json(
-        { error: 'Acesso negado: apenas superadministradores podem alterar configurações globais do sistema.' },
+        { error: 'Acesso negado: apenas superadministradores ou proprietários de loja podem alterar estas configurações.' },
         { status: 403 }
       );
     }
-
-    const body = await req.json().catch(() => ({}));
 
     // Bypass mock em ambiente local
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
