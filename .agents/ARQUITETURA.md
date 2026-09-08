@@ -127,6 +127,11 @@ Para recriar ou atualizar a estrutura do banco de dados no Supabase, execute o a
   - O e-mail de rastreio **não é enviado no mesmo dia da compra**.
   - O rastreio só é enviado se a **Nota Fiscal já tiver sido enviada previamente** (`nota_enviada === true`) e se a data do pedido for anterior ao dia de hoje (`criadoEmDiaAnterior === true`).
 
+10. **`whatsapp_connections` (Conexões Multi-Provider de WhatsApp)**:
+    - `id` (UUID PK), `store_id` (FK stores), `provider` ('evolution' | 'waha' | 'meta_cloud'), `instance_name` TEXT, `api_url` TEXT, `credentials` JSONB, `priority` INTEGER, `status` ('active' | 'inactive'), `is_default` BOOLEAN.
+    - Suporta múltiplos provedores com prioridade e failover. Permite gerenciamento via painel com mascaramento de chaves e teste de conectividade.
+    - Roteador agnóstico em `lib/whatsapp/whatsappRouter.ts` e adapters `wahaAdapter.ts` / `evolutionAdapter.ts`.
+
 ---
 
 ## 8. Procedimento de Build e Deploy

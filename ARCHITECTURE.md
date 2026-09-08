@@ -299,8 +299,40 @@ npx vercel deploy --prod --force
 - **Problema:** Ao clicar em "Todos Pendentes", a tela exibia `⚠️ Nenhum e-mail enviado (420 erros). Motivo: Verifique as configurações do Resend`. A API do Resend estava 100% operacional, mas a rota `enviar-lote` continha a trava rígida `.eq('status_pedido', 'pago')`, enquanto a fila de e-mails do painel listava pedidos com status da Shopify (`'enviado'`, `'separacao'`, etc.). Isso fazia a query retornar 0 pedidos e cair no fallback de erro genérico do painel.
 - **Decisão:** Alteramos a query de pedidos em `enviar-lote` para aceitar `.in('status_pedido', ['pago', 'separacao', 'enviado', 'entregue'])`, ou buscar diretamente por ID quando um `orderId` individual for passado pelo loop do painel. Aprimoramos o tratamento de retorno no frontend para exibir justificativas reais e contextuais caso o pedido esteja retido pelas regras de elegibilidade temporal (D+1).
 
+### 8.18 Arquitetura Multi-Provider de WhatsApp (Evolution API + WAHA)
+- **Motivação:** A plataforma originalmente suportava apenas a Evolution API com campos legados na tabela `stores`. Havia a necessidade de suportar oficialmente instâncias WAHA (WhatsApp HTTP API) sem quebrar lojas existentes que utilizam a Evolution API e permitindo failover por prioridade.
+- **Implementação:**
+  1. **Tabela `whatsapp_connections`**: Criada no Supabase (`supabase/add_whatsapp_connections.sql`) com isolamento multi-tenant por `store_id`, suportando múltiplos provedores (`waha`, `evolution`, `meta_cloud`), prioridade (`priority`), status (`active`/`inactive`), flag padrão (`is_default`), `api_url`, `instance_name` e credenciais criptografadas/mascaradas em `credentials JSONB`.
+  2. **Camada de Adapters Agnóstica**:
+     - `lib/whatsapp/types.ts`: Definições estritas de interfaces `IWhatsAppAdapter`, `SendWhatsAppParams`, `SendWhatsAppResult`, `NormalizedPayloadResult`.
+     - `lib/whatsapp/adapters/wahaAdapter.ts`: Adapter para WAHA implementando envio via `POST /api/sendText` e normalização universal de webhooks (NOWEB / WEBJS / GOWS).
+     - `lib/whatsapp/adapters/evolutionAdapter.ts`: Adapter modular para Evolution API v1/v2 com retrocompatibilidade total.
+     - `lib/whatsapp/whatsappRouter.ts`: Roteador universal de despacho que resolve conexões ativas por prioridade em `whatsapp_connections` com fallback transparente para os campos legados de `stores`.
+  3. **Endpoints de Gestão de Conexões**:
+     - `GET /api/whatsapp/connections`: Lista conexões da loja ativa com credenciais mascaradas (`****`).
+     - `POST /api/whatsapp/connections`: Upsert idempotente de conexão por provedor, garantindo no máximo 1 registro ativo por tipo sem duplicações.
+     - `POST /api/whatsapp/connections/test`: Testa conectividade de rede e autenticação com o provedor em tempo real sem persistir alterações.
+  4. **Webhook de Entrada Universal**:
+     - `app/api/webhooks/waha/route.ts`: Rota receptora de eventos do WAHA conectada ao orquestrador central de IA (`lib/ai/orchestrator.ts`).
+  5. **UI no Painel Admin (`AdminClient.tsx`)**:
+     - Card de WhatsApp atualizado com abas seletoras **[ Evolution API ]** e **[ WAHA ]**.
+     - Inputs dedicados para cada provedor com mascaramento seguro de tokens/API keys.
+     - Botão interativo **"Testar Conexão"** com feedback visual dinâmico.
+     - Badges de status ativo refletindo a conexão em uso.
+
+### 8.19 Correção de Permissões Contextuais de Configurações e Homologação WAHA
+- **Problema de Autorização (HTTP 403):** Lojistas com papel `owner` na tabela `store_users` recebiam erro 403 ao salvar configurações da própria loja em `/api/settings` porque o endpoint continha trava rígida exigindo `isSuperAdmin`.
+- **Decisão:** O endpoint `/api/settings/route.ts` foi atualizado cirurgicamente com autorização contextual: se a requisição visa uma loja específica (`targetStoreId`), é permitida caso o usuário seja `isSuperAdmin` OU `owner` daquela loja específica. A trava global permanece estrita para configurações que afetam o SaaS inteiro.
+- **Validação de Disparo e Entrega no WAHA:**
+  - Instância WAHA homologada em `https://waha.vps11349.panel.icontainer.online` (Sessão `default`, número `558796679855@c.us`).
+  - Disparo de saída via `POST /api/sendText` testado em produção e entregue com sucesso no celular do lojista (`558796661749`).
+  - **Requisito para Resposta Automática da IA (Entrada no WAHA Core)**:
+    No motor `WEBJS` do WAHA Core, para que mensagens recebidas de clientes disparem webhooks HTTP para a Vercel (`https://rastreio-io.vercel.app/api/webhooks/waha`), o container Docker na VPS/iContainer precisa ser recriado com as variáveis de ambiente globais:
+    ```env
+    WHATSAPP_HOOK_URL=https://rastreio-io.vercel.app/api/webhooks/waha
+    WHATSAPP_HOOK_EVENTS=*
+    ```
+
 ---
 
 > **Dica para Economia de Tokens com IAs**: Ao iniciar uma nova instrução com um assistente de IA, mencione apenas: *"Consulte o arquivo `ARCHITECTURE.md` para entender a estrutura e convenções antes de editar."*
-
-
