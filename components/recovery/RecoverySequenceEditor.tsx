@@ -8,6 +8,7 @@ import {
 import StepCard, { RecoveryStepItem } from './StepCard';
 import WhatsAppPreview from './WhatsAppPreview';
 import TemplateLibraryModal from './TemplateLibraryModal';
+import { supabase } from '@/lib/supabaseClient';
 
 interface RecoverySequenceEditorProps {
   storeId?: string;
@@ -59,26 +60,49 @@ export default function RecoverySequenceEditor({
   const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
   const [lastPublishedAt, setLastPublishedAt] = useState<string | null>(null);
 
-  // Carregar os passos existentes da loja no banco
+  // Obter headers autenticados do Supabase no navegador
+  const getAuthHeaders = useCallback(async (): Promise<Record<string, string> | null> => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return null;
+      return { Authorization: `Bearer ${token}` };
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Carregar os passos existentes da loja no banco com autenticação
   const fetchStoreSteps = useCallback(async () => {
     if (!storeId || storeId === 'all') return;
     setLoading(true);
     setErrorMessage(null);
     try {
-      const res = await fetch(`/api/recovery/steps?store_id=${storeId}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.steps) && data.steps.length > 0) {
-          setSteps(data.steps);
-          setSelectedStepIndex(0);
-          const publishedItem = data.steps.find((s: any) => s.published_at);
-          if (publishedItem?.published_at) {
-            setLastPublishedAt(publishedItem.published_at);
-          }
-        } else {
-          // Se ainda não tiver steps salvos, mantém o default sugerido
-          setSteps(DEFAULT_INITIAL_STEPS);
+      const authHeaders = await getAuthHeaders();
+      if (!authHeaders) {
+        setErrorMessage('Sessão de autenticação não identificada. Por favor, recarregue a página ou faça login novamente.');
+        return;
+      }
+
+      const res = await fetch(`/api/recovery/steps?store_id=${storeId}`, {
+        headers: authHeaders,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorMessage(data.error || 'Falha ao carregar passos de recuperação.');
+        return;
+      }
+
+      if (Array.isArray(data.steps) && data.steps.length > 0) {
+        setSteps(data.steps);
+        setSelectedStepIndex(0);
+        const publishedItem = data.steps.find((s: any) => s.published_at);
+        if (publishedItem?.published_at) {
+          setLastPublishedAt(publishedItem.published_at);
         }
+      } else {
+        // Se ainda não tiver steps salvos, mantém o default sugerido
+        setSteps(DEFAULT_INITIAL_STEPS);
       }
     } catch (err: any) {
       console.error('Erro ao carregar steps de recuperação:', err);
@@ -86,7 +110,7 @@ export default function RecoverySequenceEditor({
     } finally {
       setLoading(false);
     }
-  }, [storeId]);
+  }, [storeId, getAuthHeaders]);
 
   useEffect(() => {
     fetchStoreSteps();
@@ -150,9 +174,19 @@ export default function RecoverySequenceEditor({
     setSuccessMessage(null);
 
     try {
+      const authHeaders = await getAuthHeaders();
+      if (!authHeaders) {
+        setErrorMessage('Sessão de autenticação ausente ou expirada. Faça login novamente.');
+        setSaving(false);
+        return;
+      }
+
       const res = await fetch('/api/recovery/steps', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
         body: JSON.stringify({
           store_id: storeId,
           steps,
