@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/sync-shopify",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/tracking-journey/process",
+      "schedule": "0 * * * *"
     }
   ]
 }

@@ -5,6 +5,7 @@ import { gerarCodigoRastreio } from '@/lib/gerarCodigoRastreio';
 import { criptografar, gerarCpfHash } from '@/lib/criptografia';
 import { ShopifyOrderWebhook } from '@/types/shopify';
 import { getShopifyConfig, enviarRastreioShopify } from '@/lib/shopifyService';
+import { enqueueJourney } from '@/lib/trackingJourney';
 
 // Desabilita body parsing automático do Next.js para lermos o raw text para validação do HMAC
 export const dynamic = 'force-dynamic';
@@ -552,6 +553,13 @@ export async function POST(req: NextRequest) {
             trackingCriado = true;
             console.log(`Rastreio ${codigo} gerado. Envio agendado para ${syncAfter}.`);
             // Nota: O envio real ocorrerá através do endpoint cron `/api/cron/sync-shopify`
+
+            // Enfileira o pedido na Jornada de Rastreio de 15 Dias (fire-and-forget)
+            if (storeId && orderDbId) {
+              enqueueJourney(orderDbId, storeId).catch((err) =>
+                console.error('[JOURNEY] Falha ao enfileirar jornada no webhook:', err)
+              );
+            }
           } else {
             console.warn(`Colisão de código de rastreio detectada. Retentando... (${retries} tentativas restantes)`);
             retries--;
