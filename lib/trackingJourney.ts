@@ -359,7 +359,7 @@ export async function processJourneyQueue(batchSize = 50): Promise<{
     stats.processed++;
 
     // Busca os steps configurados para a loja deste pedido
-    const { data: steps, error: stepsError } = await supabaseAdmin
+    const { data: dbSteps, error: stepsError } = await supabaseAdmin
       .from('tracking_journey_steps')
       .select('*')
       .eq('store_id', item.store_id)
@@ -368,8 +368,23 @@ export async function processJourneyQueue(batchSize = 50): Promise<{
       .order('step_number', { ascending: true })
       .limit(1);
 
-    if (stepsError || !steps || steps.length === 0) {
-      // Não há mais steps configurados — jornada concluída
+    // Se a loja não tem steps configurados no banco, usa os defaults do sistema
+    // Isso garante que TODAS as lojas (existentes e futuras) funcionem sem configuração manual
+    let step: JourneyStep | null = null;
+    if (!stepsError && dbSteps && dbSteps.length > 0) {
+      step = dbSteps[0] as JourneyStep;
+    } else {
+      const defaults = getDefaultJourneySteps();
+      const defaultStep = defaults.find((s) => s.step_number >= item.next_step);
+      if (defaultStep) {
+        // Monta o objeto no formato JourneyStep com store_id e id fictícios
+        step = { ...defaultStep, id: `default-${defaultStep.step_number}`, store_id: item.store_id } as JourneyStep;
+        console.log(`[JOURNEY CRON] Loja ${item.store_id} sem steps no banco — usando default step ${step.step_number}`);
+      }
+    }
+
+    if (!step) {
+      // Todos os 15 steps foram processados — jornada concluída
       await supabaseAdmin
         .from('tracking_journey_queue')
         .update({ status: 'completed' })
@@ -384,14 +399,12 @@ export async function processJourneyQueue(batchSize = 50): Promise<{
         event_type: 'completed',
         channel: 'email',
         success: true,
-        metadata: { reason: 'Nenhum step ativo restante' },
+        metadata: { reason: 'Todos os 15 steps foram concluídos' },
       });
 
       stats.skipped++;
       continue;
     }
-
-    const step = steps[0] as JourneyStep;
 
     // Verifica se deve enviar agora
     const { shouldSend, reason } = await resolveNextStep(item, step);
