@@ -742,26 +742,10 @@ export function getDefaultJourneySteps(): Omit<
     },
     {
       step_number: 10,
-      step_name: 'Entregue com Sucesso',
-      step_description: 'Quando o status muda para "entregue" — parabéns + avaliação',
-      trigger_type: 'status_change',
-      trigger_day_offset: 10,
-      tracking_status_trigger: 'entregue',
-      is_active: true,
-      email_subject: '🎉 Pedido #{numero_pedido} entregue com sucesso!',
-      email_body_html: buildHtml('🎉 Entregue!', `
-        <p style="color:#94a3b8;margin:0 0 8px;">Olá, <strong style="color:#f1f5f9;">{primeiro_nome}</strong>!</p>
-        <h1 style="color:#f1f5f9;font-size:24px;font-weight:700;margin:0 0 12px;">Seu pedido chegou! 🎉</h1>
-        <p style="color:#64748b;margin:0 0 16px;">O pedido <strong style="color:#94a3b8;">#{numero_pedido}</strong> foi entregue com sucesso no endereço cadastrado. Esperamos que você adore!</p>
-        <p style="color:#64748b;margin:0;">Aproveite sua compra e volte sempre. Sua satisfação é o que nos motiva! 💜</p>
-      `),
-    },
-    {
-      step_number: 11,
       step_name: 'Taxa Pendente (1ª Cobrança)',
-      step_description: 'D+11 — Cobrança da taxa de serviço na página de rastreio',
+      step_description: 'D+10 — Cobrança da taxa de serviço na página de rastreio',
       trigger_type: 'day_offset',
-      trigger_day_offset: 11,
+      trigger_day_offset: 10,
       tracking_status_trigger: null,
       is_active: true,
       email_subject: '⚠️ Taxa de serviço pendente — Pedido #{numero_pedido}',
@@ -775,11 +759,11 @@ export function getDefaultJourneySteps(): Omit<
       `),
     },
     {
-      step_number: 12,
+      step_number: 11,
       step_name: 'Taxa — 1ª Retentativa',
-      step_description: 'D+12 — Lembrete urgente de taxa não paga',
+      step_description: 'D+11 — Lembrete urgente de taxa não paga',
       trigger_type: 'day_offset',
-      trigger_day_offset: 12,
+      trigger_day_offset: 11,
       tracking_status_trigger: null,
       is_active: true,
       email_subject: '🔴 URGENTE: Taxa de serviço vencendo — Pedido #{numero_pedido}',
@@ -794,11 +778,11 @@ export function getDefaultJourneySteps(): Omit<
       `),
     },
     {
-      step_number: 13,
+      step_number: 12,
       step_name: 'Taxa — 2ª Retentativa',
-      step_description: 'D+13 — Urgência máxima, prazo final',
+      step_description: 'D+12 — Urgência máxima, prazo final',
       trigger_type: 'day_offset',
-      trigger_day_offset: 13,
+      trigger_day_offset: 12,
       tracking_status_trigger: null,
       is_active: true,
       email_subject: '🚨 ÚLTIMO AVISO: Taxa vence hoje — Pedido #{numero_pedido}',
@@ -813,11 +797,11 @@ export function getDefaultJourneySteps(): Omit<
       `),
     },
     {
-      step_number: 14,
+      step_number: 13,
       step_name: 'Taxa Não Paga — Escalação',
-      step_description: 'D+14 — Comunicado de bloqueio por taxa em atraso',
+      step_description: 'D+13 — Comunicado de bloqueio por taxa em atraso',
       trigger_type: 'day_offset',
-      trigger_day_offset: 14,
+      trigger_day_offset: 13,
       tracking_status_trigger: null,
       is_active: true,
       email_subject: '⛔ Acesso ao rastreio restrito — Pedido #{numero_pedido}',
@@ -828,6 +812,22 @@ export function getDefaultJourneySteps(): Omit<
         <div style="background:#1a0000;border:2px solid #dc2626;border-radius:12px;padding:16px;margin-bottom:16px;">
           <p style="color:#f87171;margin:0;font-size:13px;">Para restaurar o acesso completo, regularize sua pendência clicando no botão abaixo. O desbloqueio ocorre em até 1 hora após o pagamento.</p>
         </div>
+      `),
+    },
+    {
+      step_number: 14,
+      step_name: 'Entregue com Sucesso',
+      step_description: 'Quando o status muda para "entregue" — parabéns + avaliação',
+      trigger_type: 'status_change',
+      trigger_day_offset: 14,
+      tracking_status_trigger: 'entregue',
+      is_active: true,
+      email_subject: '🎉 Pedido #{numero_pedido} entregue com sucesso!',
+      email_body_html: buildHtml('🎉 Entregue!', `
+        <p style="color:#94a3b8;margin:0 0 8px;">Olá, <strong style="color:#f1f5f9;">{primeiro_nome}</strong>!</p>
+        <h1 style="color:#f1f5f9;font-size:24px;font-weight:700;margin:0 0 12px;">Seu pedido chegou! 🎉</h1>
+        <p style="color:#64748b;margin:0 0 16px;">O pedido <strong style="color:#94a3b8;">#{numero_pedido}</strong> foi entregue com sucesso no endereço cadastrado. Esperamos que você adore!</p>
+        <p style="color:#64748b;margin:0;">Aproveite sua compra e volte sempre. Sua satisfação é o que nos motiva! 💜</p>
       `),
     },
     {
