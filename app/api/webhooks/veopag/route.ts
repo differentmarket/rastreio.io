@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { handleTaxPaidInJourney } from '@/lib/trackingJourney';
 
 export const dynamic = 'force-dynamic';
 
@@ -121,6 +122,16 @@ export async function POST(req: NextRequest) {
           .eq('status', 'pendente');
       } catch (errTax) {
         console.error('Erro ao atualizar status em tax_payments:', errTax);
+      }
+
+      // Notifica a jornada de rastreio para interromper cobranças e liberar envio para entrega
+      const orderId = orderData?.id;
+      if (orderId && resolvedStoreId) {
+        try {
+          await handleTaxPaidInJourney(orderId, resolvedStoreId);
+        } catch (errJourney) {
+          console.error('Erro ao atualizar jornada pós-pagamento de taxa:', errJourney);
+        }
       }
     }
 

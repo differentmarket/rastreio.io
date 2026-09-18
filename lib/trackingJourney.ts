@@ -322,6 +322,243 @@ async function resolveNextStep(
 }
 
 // ==============================================================================
+// Template e helpers para confirmação de taxa paga
+// ==============================================================================
+
+export function buildTaxPaidHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+</head>
+<body style="margin:0;padding:0;background-color:#0f172a;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;padding:40px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+        <tr><td align="center" style="padding-bottom:28px;">
+          <div style="display:inline-block;background:linear-gradient(135deg,#10b981,#059669);border-radius:16px;padding:12px 28px;">
+            <span style="color:#fff;font-size:18px;font-weight:700;letter-spacing:1px;">✅ Taxa Confirmada!</span>
+          </div>
+        </td></tr>
+        <tr><td>
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#1e293b;border-radius:20px;border:1px solid #334155;overflow:hidden;">
+            <tr><td style="background:linear-gradient(90deg,#10b981,#059669,#06b6d4);height:4px;"></td></tr>
+            <tr><td style="padding:36px;">
+              <p style="color:#94a3b8;margin:0 0 8px;">Olá, <strong style="color:#f1f5f9;">{primeiro_nome}</strong>!</p>
+              <h1 style="color:#f1f5f9;font-size:24px;font-weight:700;margin:0 0 12px;">Pagamento confirmado com sucesso! 🎉</h1>
+              <p style="color:#64748b;margin:0 0 16px;">Confirmamos o pagamento da taxa de serviço logístico referente ao pedido <strong style="color:#94a3b8;">#{numero_pedido}</strong>.</p>
+              <div style="background:#062b1b;border:1px solid #059669;border-radius:12px;padding:16px;margin-bottom:16px;">
+                <p style="color:#34d399;margin:0;font-size:13px;"><strong>📦 Pedido Liberado:</strong> O seu objeto foi desembaraçado pelas centrais de logística e já está em processo de encaminhamento para as tentativas de entrega no seu endereço.</p>
+              </div>
+              <p style="color:#64748b;margin:0;">Acompanhe o status atualizado em tempo real pelo botão abaixo.</p>
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:28px;">
+                <tr><td align="center">
+                  <a href="{link_rastreio}" style="display:inline-block;background:linear-gradient(135deg,#10b981,#059669);color:#fff;text-decoration:none;font-size:15px;font-weight:700;padding:16px 36px;border-radius:12px;">
+                    🔍 Acompanhar meu pedido
+                  </a>
+                </td></tr>
+              </table>
+            </td></tr>
+            <tr><td style="padding:20px 36px;text-align:center;">
+              <p style="color:#475569;font-size:12px;margin:0;">{nome_loja} · Este e-mail foi enviado automaticamente.</p>
+            </td></tr>
+          </table>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+/**
+ * Verifica se a taxa logística vinculada ao pedido já foi paga.
+ */
+export async function isOrderTaxPaid(orderId: string): Promise<boolean> {
+  try {
+    // 1. Checa na tabela tax_payments por order_id
+    const { data: taxByOrder } = await supabaseAdmin
+      .from('tax_payments')
+      .select('id')
+      .eq('order_id', orderId)
+      .eq('status', 'pago')
+      .limit(1);
+
+    if (taxByOrder && taxByOrder.length > 0) {
+      return true;
+    }
+
+    // 2. Checa via tracking_id associado ao order_id
+    const { data: trk } = await supabaseAdmin
+      .from('trackings')
+      .select('id, historico')
+      .eq('order_id', orderId)
+      .maybeSingle();
+
+    if (trk?.id) {
+      const { data: taxByTracking } = await supabaseAdmin
+        .from('tax_payments')
+        .select('id')
+        .eq('tracking_id', trk.id)
+        .eq('status', 'pago')
+        .limit(1);
+
+      if (taxByTracking && taxByTracking.length > 0) {
+        return true;
+      }
+
+      // 3. Fallback: histórico do rastreio
+      const hist = Array.isArray(trk.historico) ? trk.historico : [];
+      const hasTaxInHistory = hist.some((h: any) =>
+        h?.descricao && typeof h.descricao === 'string' &&
+        (h.descricao.toLowerCase().includes('taxa de liberação paga com sucesso') ||
+         h.descricao.toLowerCase().includes('taxa paga'))
+      );
+      if (hasTaxInHistory) return true;
+    }
+
+    return false;
+  } catch (err) {
+    console.error('[JOURNEY] Erro ao verificar status da taxa:', err);
+    return false;
+  }
+}
+
+/**
+ * Dispara e-mail de taxa confirmada/pedido liberado uma única vez por pedido.
+ */
+async function sendTaxPaidNotification(queueItem: JourneyQueueItem): Promise<void> {
+  try {
+    const { data: existing } = await supabaseAdmin
+      .from('tracking_journey_events')
+      .select('id')
+      .eq('order_id', queueItem.order_id)
+      .eq('step_name', 'Taxa Confirmada')
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      return;
+    }
+
+    const { data: orderData } = await supabaseAdmin
+      .from('orders')
+      .select(`
+        id, order_number, cliente_nome, cliente_email, store_id,
+        trackings (codigo_rastreio, status),
+        stores (nome_loja)
+      `)
+      .eq('id', queueItem.order_id)
+      .maybeSingle();
+
+    if (!orderData || !orderData.cliente_email) return;
+
+    const trackingInfo = Array.isArray(orderData.trackings)
+      ? orderData.trackings[0]
+      : orderData.trackings;
+    const storeInfo = Array.isArray(orderData.stores)
+      ? orderData.stores[0]
+      : orderData.stores;
+
+    const appUrl =
+      process.env.NEXT_PUBLIC_APP_URL || 'https://rastreio-io.vercel.app';
+    const codigoRastreio = trackingInfo?.codigo_rastreio || '';
+    const trackingUrl = codigoRastreio
+      ? `${appUrl}/rastreio/${codigoRastreio}`
+      : appUrl;
+
+    const emailResult = await sendJourneyEmail({
+      storeId: queueItem.store_id,
+      toEmail: orderData.cliente_email,
+      toName: orderData.cliente_nome || 'Cliente',
+      numeroPedido: orderData.order_number || orderData.id.slice(0, 8),
+      codigoRastreio,
+      trackingUrl,
+      nomeLoja: storeInfo?.nome_loja || 'Loja',
+      subject: '✅ Taxa confirmada — Pedido #{numero_pedido} liberado para entrega!',
+      bodyHtml: buildTaxPaidHtml(),
+    });
+
+    await supabaseAdmin.from('tracking_journey_events').insert({
+      store_id: queueItem.store_id,
+      order_id: queueItem.order_id,
+      queue_id: queueItem.id,
+      step_number: queueItem.next_step,
+      step_name: 'Taxa Confirmada',
+      event_type: emailResult.success ? 'sent' : 'failed',
+      channel: 'email',
+      success: emailResult.success,
+      email_to: orderData.cliente_email,
+      error_message: emailResult.error || null,
+      metadata: { reason: 'Taxa quitada — e-mail de liberação enviado' },
+    });
+  } catch (err) {
+    console.error('[JOURNEY] Erro ao enviar confirmação de taxa paga:', err);
+  }
+}
+
+/**
+ * Chamado quando a taxa for paga (via webhook da VeoPag ou pelo cron).
+ * Pula os passos de cobrança (10 a 13), envia o e-mail de taxa confirmada/pedido liberado,
+ * e avança a jornada para o Step 14 (Entregue com Sucesso).
+ */
+export async function handleTaxPaidInJourney(
+  orderId: string,
+  storeId: string
+): Promise<boolean> {
+  try {
+    const { data: queueItem } = await supabaseAdmin
+      .from('tracking_journey_queue')
+      .select('*')
+      .eq('order_id', orderId)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (!queueItem) {
+      return false;
+    }
+
+    // Se estiver na fase de cobrança (Steps 10 a 13)
+    if (queueItem.next_step >= 10 && queueItem.next_step <= 13) {
+      console.log(`[JOURNEY] Interrompendo cobranças do pedido ${orderId} pois taxa foi paga.`);
+
+      // Envia notificação de taxa confirmada (se ainda não enviou)
+      await sendTaxPaidNotification(queueItem as JourneyQueueItem);
+
+      // Registra evento de auditoria informando o cancelamento das cobranças
+      await supabaseAdmin.from('tracking_journey_events').insert({
+        store_id: storeId,
+        order_id: orderId,
+        queue_id: queueItem.id,
+        step_number: queueItem.next_step,
+        step_name: 'Cobrança Interrompida (Taxa Paga)',
+        event_type: 'skipped',
+        channel: 'email',
+        success: true,
+        metadata: { reason: 'Taxa paga pelo cliente. Passos 10-13 pulados, avançando para Step 14.' },
+      });
+
+      // Avança a fila diretamente para o Step 14 (Entregue com Sucesso)
+      await supabaseAdmin
+        .from('tracking_journey_queue')
+        .update({
+          current_step: 13,
+          next_step: 14,
+          next_send_at: new Date().toISOString(),
+        })
+        .eq('id', queueItem.id);
+
+      return true;
+    }
+
+    return false;
+  } catch (err) {
+    console.error('[JOURNEY] Erro ao processar taxa paga na jornada:', err);
+    return false;
+  }
+}
+
+// ==============================================================================
 // processJourneyQueue — cron worker principal
 // Processa até `batchSize` itens da fila que estão prontos para envio.
 // ==============================================================================
@@ -404,6 +641,19 @@ export async function processJourneyQueue(batchSize = 50): Promise<{
 
       stats.skipped++;
       continue;
+    }
+
+    // Se o próximo step for de cobrança de taxa (Steps 10 a 13), verifica se o cliente já pagou a taxa
+    if (step.step_number >= 10 && step.step_number <= 13) {
+      const taxPaid = await isOrderTaxPaid(item.order_id);
+      if (taxPaid) {
+        console.log(
+          `[JOURNEY CRON] Pedido ${item.order_id} com taxa quitada. Pulando cobranças e liberando para entrega.`
+        );
+        await handleTaxPaidInJourney(item.order_id, item.store_id);
+        stats.skipped++;
+        continue;
+      }
     }
 
     // Verifica se deve enviar agora
