@@ -1055,7 +1055,7 @@ export default function AdminClient() {
 
   const handleSendBatchEmails = async (
     periodo: 'hoje' | 'ontem' | 'semana' | 'pendentes' | 'todos' | 'exceto_hoje',
-    tipoNotificacao: 'ambos' | 'nota' | 'rastreio' = 'ambos'
+    tipoNotificacao: 'ambos' | 'nota' | 'rastreio' | 'atualizacao' = 'ambos'
   ) => {
     setBatchSending(true);
     setBatchResult(null);
@@ -1078,6 +1078,11 @@ export default function AdminClient() {
         if (tipoNotificacao === 'nota') {
           // Pode enviar Nota Fiscal hoje ou em qualquer dia se ainda não enviou
           return !notaJaEnviada;
+        }
+
+        if (tipoNotificacao === 'atualizacao') {
+          // Notifica atualização: apenas exige código de rastreio, sem restrições de D+1
+          return !!(item.trackings?.codigo_rastreio);
         }
 
         if (tipoNotificacao === 'rastreio') {
@@ -2310,6 +2315,16 @@ export default function AdminClient() {
                   className="flex-1 sm:flex-none py-2 px-3.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 rounded-xl text-xs font-bold text-slate-200 transition-colors flex items-center justify-center gap-1.5 border border-slate-700"
                 >
                   🚀 Todos Pendentes
+                </button>
+
+                <button
+                  onClick={() => handleSendBatchEmails('todos', 'atualizacao')}
+                  disabled={batchSending}
+                  title="Envia o e-mail 'Seu Pedido foi atualizado' para todos os pedidos que já possuem código de rastreio, sem restrições de prazo."
+                  className="flex-1 sm:flex-none py-2 px-3.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 disabled:opacity-50 rounded-xl text-xs font-bold text-white transition-all shadow-md shadow-amber-950/40 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  {batchSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5 text-amber-200" />}
+                  📢 Notificar Atualização
                 </button>
               </div>
             </div>

@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     // periodo: 'hoje' | 'ontem' | 'semana' | 'mes' | 'pendentes' | 'todos' | 'exceto_hoje'
-    // tipoNotificacao: 'rastreio' | 'nota' | 'ambos'
+    // tipoNotificacao: 'rastreio' | 'nota' | 'ambos' | 'atualizacao'
     // forcarHoje: true = ignora regra de próximo dia útil para rastreio
     const { periodo, tipoNotificacao, forcarHoje = false, orderId = null } = body;
     const tipo = tipoNotificacao || 'ambos';
@@ -174,6 +174,11 @@ export async function POST(req: NextRequest) {
 
       if (!email) return false;
 
+      // Tipo 'atualizacao': sem regras de D+1 ou nota fiscal — apenas exige código de rastreio
+      if (tipo === 'atualizacao') {
+        return !!(trk?.codigo_rastreio);
+      }
+
       const notaJaEnviada     = o.raw_payload?.nota_enviada === true;
       const rastreioJaEnviado  = trk?.email_enviado === true;
       const criadoEmDiaAnterior = isAnteriorAHoje(o.created_at);
@@ -250,6 +255,32 @@ export async function POST(req: NextRequest) {
         const lojaNomeEspecifico = storeInfo?.empresa_nome || storeInfo?.nome_loja || empresaNome;
         const lojaFromEmail = storeInfo?.resend_from_email?.trim() || fromEmail;
         const lojaResendApiKey = storeInfo?.resend_api_key?.trim() || resendApiKey;
+
+        // ── Envio de Notificação de Atualização de Rastreio ────────
+        if (tipo === 'atualizacao') {
+          const trackingUrl = `${appUrl}/rastreio/${trk.codigo_rastreio}`;
+          const htmlAtual = buildAtualizacaoHtml({ order, cust: custObj, trk, trackingUrl, empresaNome: lojaNomeEspecifico });
+
+          if (lojaResendApiKey) {
+            const r = await fetch('https://api.resend.com/emails', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${lojaResendApiKey}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                from: lojaFromEmail,
+                to: custObj.email,
+                subject: `Seu Pedido foi atualizado 📦 — #${order.numero_pedido}`,
+                html: htmlAtual,
+              }),
+            });
+            if (!r.ok) {
+              const errData = await r.json().catch(() => ({}));
+              throw new Error(errData.message || 'Falha ao comunicar com a API do Resend na notificação de atualização.');
+            }
+          }
+
+          disparados++;
+          continue;
+        }
 
         // ── Envio de Nota de Compra ─────────────────────────────
         if ((tipo === 'nota' || tipo === 'ambos') && podeEnviarNota) {
@@ -524,4 +555,118 @@ function buildRastreioHtml({ order, cust, trk, trackingUrl, empresaNome }: any) 
 </table>
 </td></tr></table>
 </body></html>`;
+}
+
+function buildAtualizacaoHtml({ order, cust, trk, trackingUrl, empresaNome }: any) {
+  const firstName = (cust?.nome || 'Cliente').split(' ')[0];
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Seu Pedido foi atualizado</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0f172a;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0f172a;padding:40px 16px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+          <!-- Header -->
+          <tr>
+            <td align="center" style="padding-bottom:32px;">
+              <div style="display:inline-block;background:linear-gradient(135deg,#f59e0b,#ea580c);border-radius:16px;padding:12px 28px;">
+                <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:1px;">🔔 Atualização do Pedido</span>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Card principal -->
+          <tr>
+            <td>
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#1e293b;border-radius:20px;border:1px solid #334155;overflow:hidden;">
+
+                <!-- Top accent bar -->
+                <tr>
+                  <td style="background:linear-gradient(90deg,#f59e0b,#ea580c,#f97316);height:4px;"></td>
+                </tr>
+
+                <!-- Body -->
+                <tr>
+                  <td style="padding:40px 36px;">
+
+                    <p style="color:#94a3b8;font-size:14px;margin:0 0 8px;">Olá, <strong style="color:#f1f5f9;">${firstName}</strong> 👋</p>
+                    <h1 style="color:#f1f5f9;font-size:26px;font-weight:700;margin:0 0 8px;line-height:1.3;">
+                      Seu Pedido foi atualizado! 📦
+                    </h1>
+                    <p style="color:#64748b;font-size:14px;margin:0 0 32px;">
+                      O pedido <strong style="color:#94a3b8;">#${order.numero_pedido}</strong> teve uma atualização de status. Acesse a página de rastreio para conferir as informações mais recentes.
+                    </p>
+
+                    <!-- Tracking code box -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0f172a;border-radius:14px;border:1px solid #334155;margin-bottom:28px;">
+                      <tr>
+                        <td style="padding:20px 24px;">
+                          <p style="color:#64748b;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px;">Código de Rastreio</p>
+                          <p style="color:#fbbf24;font-size:22px;font-weight:800;font-family:'Courier New',monospace;margin:0;letter-spacing:2px;">${trk.codigo_rastreio}</p>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- CTA Button -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
+                      <tr>
+                        <td align="center">
+                          <a href="${trackingUrl}"
+                            style="display:inline-block;background:linear-gradient(135deg,#f59e0b,#ea580c);color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;padding:16px 40px;border-radius:12px;letter-spacing:0.5px;">
+                            🔍 Ver atualização do meu pedido
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <p style="color:#475569;font-size:12px;text-align:center;margin:0;">
+                      Ou acesse diretamente:<br/>
+                      <a href="${trackingUrl}" style="color:#f59e0b;word-break:break-all;">${trackingUrl}</a>
+                    </p>
+
+                  </td>
+                </tr>
+
+                <!-- Divider -->
+                <tr>
+                  <td style="padding:0 36px;">
+                    <div style="border-top:1px solid #1e293b;"></div>
+                  </td>
+                </tr>
+
+                <!-- Footer note -->
+                <tr>
+                  <td style="padding:24px 36px;">
+                    <p style="color:#475569;font-size:12px;margin:0;text-align:center;line-height:1.6;">
+                      Caso tenha dúvidas, entre em contato conosco respondendo este e-mail.<br/>
+                      <span style="color:#334155;">${empresaNome} · Obrigado pela preferência! 🙏</span>
+                    </p>
+                  </td>
+                </tr>
+
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td align="center" style="padding-top:24px;">
+              <p style="color:#334155;font-size:11px;margin:0;">
+                Este e-mail foi enviado automaticamente. Não responda caso não reconheça este pedido.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
 }
