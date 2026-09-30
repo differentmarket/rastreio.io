@@ -1061,6 +1061,44 @@ export default function AdminClient() {
     setBatchResult(null);
     setBatchProgress(null);
     try {
+      // ── Fluxo exclusivo para 'atualizacao': backend pagina internamente, sem limite de 1000 ──
+      if (tipoNotificacao === 'atualizacao') {
+        setBatchProgress({
+          ativo: true,
+          atual: 0,
+          total: 0,
+          sucessos: 0,
+          erros: 0,
+          percentual: 0,
+          statusLog: 'Iniciando disparo de notificações de atualização para todos os pedidos...',
+        });
+
+        const res = await fetch('/api/pedidos/enviar-lote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({
+            periodo,
+            tipoNotificacao: 'atualizacao',
+            store_id: activeStore?.id,
+          }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          setBatchResult(`❌ ${data.error || 'Erro ao disparar notificações de atualização.'}`);
+        } else if (data.disparados === 0) {
+          setBatchResult(`✅ 0 pedidos encontrados com código de rastreio para notificar.`);
+        } else if (data.erros > 0 && data.disparados === 0) {
+          setBatchResult(`⚠️ Nenhum e-mail enviado (${data.erros} erros). Motivo: ${data.ultimoErro || 'Erro de comunicação'}`);
+        } else if (data.erros > 0) {
+          setBatchResult(`🎉 ${data.disparados} notificações enviadas (${data.erros} erros). Último erro: ${data.ultimoErro}`);
+        } else {
+          setBatchResult(`🎉 Concluído! ${data.disparados} notificações de atualização enviadas com sucesso.`);
+        }
+        return;
+      }
+
+      // ── Fluxo padrão para os outros tipos (itera pela fila) ──
       const url = activeStore?.id 
         ? `/api/fila-emails?store_id=${activeStore.id}`
         : '/api/fila-emails';
@@ -1078,11 +1116,6 @@ export default function AdminClient() {
         if (tipoNotificacao === 'nota') {
           // Pode enviar Nota Fiscal hoje ou em qualquer dia se ainda não enviou
           return !notaJaEnviada;
-        }
-
-        if (tipoNotificacao === 'atualizacao') {
-          // Notifica atualização: apenas exige código de rastreio, sem restrições de D+1
-          return !!(item.trackings?.codigo_rastreio);
         }
 
         if (tipoNotificacao === 'rastreio') {

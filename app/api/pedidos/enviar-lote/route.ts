@@ -143,6 +143,40 @@ export async function POST(req: NextRequest) {
 
     let orders = initialOrders || [];
 
+    // Para o tipo 'atualizacao', paginar até buscar TODOS os pedidos (Supabase limita 1000/query)
+    if (tipo === 'atualizacao' && !orderId) {
+      let page = 1;
+      const pageSize = 1000;
+      let hasMore = orders.length === pageSize;
+
+      while (hasMore) {
+        let pageQuery = supabaseAdmin.from('orders').select(`
+          id, store_id, shopify_order_id, numero_pedido, status_pedido, valor_total,
+          itens, raw_payload, created_at,
+          customers ( nome, email ),
+          addresses ( logradouro, numero, complemento, bairro, cidade, estado, cep ),
+          trackings ( id, codigo_rastreio, status, email_enviado, shopify_synced )
+        `)
+          .in('status_pedido', ['pago', 'separacao', 'enviado', 'entregue'])
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (tenant.targetStoreId) {
+          pageQuery = pageQuery.eq('store_id', tenant.targetStoreId);
+        } else if (!tenant.isSuperAdmin) {
+          pageQuery = pageQuery.in('store_id', tenant.allowedStoreIds);
+        }
+
+        const { data: nextPage } = await pageQuery;
+        if (!nextPage || nextPage.length === 0) {
+          hasMore = false;
+        } else {
+          orders = [...orders, ...nextPage];
+          hasMore = nextPage.length === pageSize;
+          page++;
+        }
+      }
+    }
+
     // Fallback: Se o filtro por data exata (ex: 'ontem' ou 'exceto_hoje') não encontrou pedidos, busca pedidos elegíveis
     if (orders.length === 0 && !orderId && (periodo === 'ontem' || periodo === 'exceto_hoje' || periodo === 'pendentes')) {
       let fallbackQuery = supabaseAdmin.from('orders').select(`
