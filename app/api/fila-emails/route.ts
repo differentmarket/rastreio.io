@@ -122,7 +122,8 @@ export async function GET(req: NextRequest) {
         trackings ( codigo_rastreio, status, email_enviado, email_enviado_em, shopify_synced )
       `)
       .in('status_pedido', ['pago', 'separacao', 'enviado', 'entregue'])
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(10000);
 
     if (tenant.targetStoreId) {
       query = query.eq('store_id', tenant.targetStoreId);
