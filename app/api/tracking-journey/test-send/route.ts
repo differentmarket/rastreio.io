@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
       order_number = '99999',
       codigo_rastreio = 'BR240917TESTE',
       store_name = 'Rastreio.IO',
-      app_url = process.env.NEXT_PUBLIC_APP_URL || 'https://rastreio-io.vercel.app',
+      app_url = process.env.NEXT_PUBLIC_APP_URL || 'https://seurastreioo.vercel.app',
       run_logic_tests = true,
     } = body;
 

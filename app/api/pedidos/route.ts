@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { validateTenantAccess } from '@/lib/authHelper';
+import { enqueueJourney } from '@/lib/trackingJourney';
 
 export const dynamic = 'force-dynamic';
 
@@ -250,6 +251,13 @@ export async function POST(req: NextRequest) {
     // 5. Disparar Webhook para o Gateway/Automação
     const { sendTrackingToGateway } = await import('@/lib/gatewayWebhook');
     await sendTrackingToGateway(finalOrderId, codigo_rastreio.toUpperCase().trim());
+
+    // 6. Enfileirar na Jornada de Rastreio de 15 Dias (fire-and-forget)
+    if (store_id && finalOrderId) {
+      enqueueJourney(finalOrderId, store_id).catch((err) =>
+        console.error('[JOURNEY] Falha ao enfileirar jornada no pedido manual:', err)
+      );
+    }
 
     return NextResponse.json({ success: true, tracking });
   } catch (err: any) {

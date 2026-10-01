@@ -47,7 +47,7 @@ export async function trackingTool(
       }
 
       if (tracking) {
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://rastreio-io.vercel.app';
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://seurastreioo.vercel.app';
         return {
           found: true,
           data: {
@@ -99,7 +99,7 @@ export async function trackingTool(
       }
 
       if (tracking && tracking.codigo_rastreio) {
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://rastreio-io.vercel.app';
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://seurastreioo.vercel.app';
         return {
           found: true,
           data: {

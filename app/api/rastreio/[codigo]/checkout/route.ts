@@ -205,7 +205,7 @@ export async function POST(
     const veopagToken = authData.token;
 
     // Obter URL pública do app nas configurações da loja ou env
-    const nextPublicAppUrl = store.next_public_app_url || process.env.NEXT_PUBLIC_APP_URL || 'https://rastreio-io.vercel.app';
+    const nextPublicAppUrl = store.next_public_app_url || process.env.NEXT_PUBLIC_APP_URL || 'https://seurastreioo.vercel.app';
     const callbackUrl = `${nextPublicAppUrl}/api/webhooks/veopag`;
 
     // 2. Gerar cobrança Pix

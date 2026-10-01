@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (!appUrl) {
-    appUrl = 'https://rastreio-io.vercel.app';
+    appUrl = 'https://seurastreioo.vercel.app';
   }
 
   const shop = req.nextUrl.searchParams.get('shop') || '';

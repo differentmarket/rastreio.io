@@ -2,6 +2,7 @@ import { supabaseAdmin } from './supabaseAdmin';
 import { getShopifyConfig } from './shopifyService';
 import { gerarCodigoRastreio } from './gerarCodigoRastreio';
 import { criptografar, gerarCpfHash } from './criptografia';
+import { enqueueJourney } from './trackingJourney';
 
 function addOneBusinessDay(): Date {
   const date = new Date();
@@ -482,6 +483,13 @@ export async function executarSincronizacaoShopify(storeIdParam?: string, onlyRe
           // Disparar Webhook para o Gateway/Automação
           const { sendTrackingToGateway } = await import('./gatewayWebhook');
           await sendTrackingToGateway(orderDbId, codigo);
+
+          // Enfileirar na Jornada de Rastreio de 15 Dias (fire-and-forget)
+          if (storeTargetId && orderDbId) {
+            enqueueJourney(orderDbId, storeTargetId, createdIso).catch((err) =>
+              console.error('[JOURNEY] Falha ao enfileirar jornada na sincronização:', err)
+            );
+          }
         }
       } catch (orderLoopErr: any) {
         todosLogs.push({

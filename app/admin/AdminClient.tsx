@@ -3192,7 +3192,7 @@ export default function AdminClient() {
                     </div>
                   </div>
                   <div className="p-6 space-y-4">
-                    <SettingsInput label="URL Base da Aplicação" value={nextPublicAppUrl} onChange={setNextPublicAppUrl} placeholder="https://rastreio-io.vercel.app" hint="URL onde o sistema está hospedado." />
+                    <SettingsInput label="URL Base da Aplicação" value={nextPublicAppUrl} onChange={setNextPublicAppUrl} placeholder="https://seurastreioo.vercel.app" hint="URL onde o sistema está hospedado." />
                     <SettingsInput label="Shopify App Client ID (API Key)" value={shopifyClientId} onChange={setShopifyClientId} placeholder="Cole o Client ID gerado no Shopify Partners" mono hint="Necessário para a integração via OAuth." />
                     <SettingsInput label="Shopify App Client Secret" value={shopifyClientSecret} onChange={setShopifyClientSecret} placeholder="Cole o Client Secret gerado no Shopify Partners" type="password" mono hint="Necessário para troca de autorização OAuth." />
                     <hr className="border-slate-800 my-2" />

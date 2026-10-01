@@ -61,10 +61,10 @@ export async function POST(req: NextRequest) {
     if (fromEmail.includes('seudominio.com')) {
       fromEmail = 'Rastreio <onboarding@resend.dev>';
     }
-    let rawAppUrl = cfg['NEXT_PUBLIC_APP_URL'] || process.env.NEXT_PUBLIC_APP_URL || 'https://rastreio-io.vercel.app';
+    let rawAppUrl = cfg['NEXT_PUBLIC_APP_URL'] || process.env.NEXT_PUBLIC_APP_URL || 'https://seurastreioo.vercel.app';
     rawAppUrl = rawAppUrl.trim().replace(/\/+$/, '').replace(/\/rastreio$/, '');
     if (!rawAppUrl || rawAppUrl.includes('localhost') || rawAppUrl.includes('ri7o2sjad')) {
-      rawAppUrl = 'https://rastreio-io.vercel.app';
+      rawAppUrl = 'https://seurastreioo.vercel.app';
     }
     const appUrl = rawAppUrl;
     const empresaNome = cfg['EMPRESA_NOME'] || 'Minha Loja';

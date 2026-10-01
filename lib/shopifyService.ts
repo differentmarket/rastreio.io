@@ -130,9 +130,9 @@ function detectarTransportadora(shippingMethodTitle: string | null, codigoRastre
     };
   }
 
-  let appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://rastreio-io.vercel.app').trim().replace(/\/+$/, '').replace(/\/rastreio$/, '');
+  let appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://seurastreioo.vercel.app').trim().replace(/\/+$/, '').replace(/\/rastreio$/, '');
   if (!appUrl || appUrl.includes('localhost') || appUrl.includes('ri7o2sjad')) {
-    appUrl = 'https://rastreio-io.vercel.app';
+    appUrl = 'https://seurastreioo.vercel.app';
   }
   return {
     company: 'Rastreio Próprio',

@@ -44,6 +44,28 @@ function interpolateTemplate(
 }
 
 // ==============================================================================
+// Obter URL pública oficial da aplicação (sanitizada contra localhost)
+// ==============================================================================
+async function getAppBaseUrl(): Promise<string> {
+  try {
+    const { data: setting } = await supabaseAdmin
+      .from('settings')
+      .select('value')
+      .eq('key', 'NEXT_PUBLIC_APP_URL')
+      .maybeSingle();
+
+    let raw = setting?.value || process.env.NEXT_PUBLIC_APP_URL || 'https://seurastreioo.vercel.app';
+    raw = raw.trim().replace(/\/+$/, '').replace(/\/rastreio$/, '');
+    if (!raw || raw.includes('localhost') || raw.includes('127.0.0.1')) {
+      raw = 'https://seurastreioo.vercel.app';
+    }
+    return raw;
+  } catch {
+    return 'https://seurastreioo.vercel.app';
+  }
+}
+
+// ==============================================================================
 // Carregar credenciais Resend da loja (multi-tenant)
 // ==============================================================================
 async function getResendCredentials(
@@ -444,14 +466,22 @@ async function sendTaxPaidNotification(queueItem: JourneyQueueItem): Promise<voi
     const { data: orderData } = await supabaseAdmin
       .from('orders')
       .select(`
-        id, order_number, cliente_nome, cliente_email, store_id,
+        id, numero_pedido, store_id,
+        customers (nome, email),
         trackings (codigo_rastreio, status),
         stores (nome_loja)
       `)
       .eq('id', queueItem.order_id)
       .maybeSingle();
 
-    if (!orderData || !orderData.cliente_email) return;
+    const customer = Array.isArray((orderData as any)?.customers)
+      ? (orderData as any).customers[0]
+      : (orderData as any)?.customers;
+    const toEmail = customer?.email || (orderData as any)?.cliente_email;
+    const toName = customer?.nome || (orderData as any)?.cliente_nome || 'Cliente';
+    const numeroPedido = (orderData as any)?.numero_pedido || (orderData as any)?.order_number || queueItem.order_id.slice(0, 8);
+
+    if (!orderData || !toEmail) return;
 
     const trackingInfo = Array.isArray(orderData.trackings)
       ? orderData.trackings[0]
@@ -460,8 +490,7 @@ async function sendTaxPaidNotification(queueItem: JourneyQueueItem): Promise<voi
       ? orderData.stores[0]
       : orderData.stores;
 
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL || 'https://rastreio-io.vercel.app';
+    const appUrl = await getAppBaseUrl();
     const codigoRastreio = trackingInfo?.codigo_rastreio || '';
     const trackingUrl = codigoRastreio
       ? `${appUrl}/rastreio/${codigoRastreio}`
@@ -469,9 +498,9 @@ async function sendTaxPaidNotification(queueItem: JourneyQueueItem): Promise<voi
 
     const emailResult = await sendJourneyEmail({
       storeId: queueItem.store_id,
-      toEmail: orderData.cliente_email,
-      toName: orderData.cliente_nome || 'Cliente',
-      numeroPedido: orderData.order_number || orderData.id.slice(0, 8),
+      toEmail,
+      toName,
+      numeroPedido,
       codigoRastreio,
       trackingUrl,
       nomeLoja: storeInfo?.nome_loja || 'Loja',
@@ -488,7 +517,7 @@ async function sendTaxPaidNotification(queueItem: JourneyQueueItem): Promise<voi
       event_type: emailResult.success ? 'sent' : 'failed',
       channel: 'email',
       success: emailResult.success,
-      email_to: orderData.cliente_email,
+      email_to: toEmail,
       error_message: emailResult.error || null,
       metadata: { reason: 'Taxa quitada — e-mail de liberação enviado' },
     });
@@ -676,14 +705,22 @@ export async function processJourneyQueue(batchSize = 50): Promise<{
     const { data: orderData } = await supabaseAdmin
       .from('orders')
       .select(`
-        id, order_number, cliente_nome, cliente_email, valor_total, store_id,
+        id, numero_pedido, valor_total, store_id,
+        customers (nome, email),
         trackings (codigo_rastreio, status),
         stores (nome_loja, resend_from_email)
       `)
       .eq('id', item.order_id)
       .maybeSingle();
 
-    if (!orderData || !orderData.cliente_email) {
+    const customer = Array.isArray((orderData as any)?.customers)
+      ? (orderData as any).customers[0]
+      : (orderData as any)?.customers;
+    const toEmail = customer?.email || (orderData as any)?.cliente_email;
+    const toName = customer?.nome || (orderData as any)?.cliente_nome || 'Cliente';
+    const numeroPedido = (orderData as any)?.numero_pedido || (orderData as any)?.order_number || item.order_id.slice(0, 8);
+
+    if (!orderData || !toEmail) {
       console.warn(`[JOURNEY CRON] Pedido ${item.order_id} sem e-mail. Pulando.`);
       await supabaseAdmin
         .from('tracking_journey_queue')
@@ -711,8 +748,7 @@ export async function processJourneyQueue(batchSize = 50): Promise<{
       ? orderData.stores[0]
       : orderData.stores;
 
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL || 'https://rastreio-io.vercel.app';
+    const appUrl = await getAppBaseUrl();
     const codigoRastreio = trackingInfo?.codigo_rastreio || '';
     const trackingUrl = codigoRastreio
       ? `${appUrl}/rastreio/${codigoRastreio}`
@@ -721,9 +757,9 @@ export async function processJourneyQueue(batchSize = 50): Promise<{
     // Envia o e-mail
     const emailResult = await sendJourneyEmail({
       storeId: item.store_id,
-      toEmail: orderData.cliente_email,
-      toName: orderData.cliente_nome || 'Cliente',
-      numeroPedido: orderData.order_number || orderData.id.slice(0, 8),
+      toEmail,
+      toName,
+      numeroPedido,
       codigoRastreio,
       trackingUrl,
       nomeLoja: storeInfo?.nome_loja || 'Loja',
@@ -742,7 +778,7 @@ export async function processJourneyQueue(batchSize = 50): Promise<{
       channel: 'email',
       success: emailResult.success,
       error_message: emailResult.error || null,
-      email_to: orderData.cliente_email,
+      email_to: toEmail,
       metadata: { reason },
     });
 
@@ -765,7 +801,7 @@ export async function processJourneyQueue(batchSize = 50): Promise<{
         .eq('id', item.id);
 
       console.log(
-        `[JOURNEY CRON] ✅ Step ${step.step_number} enviado para ${orderData.cliente_email} (pedido ${orderData.order_number})`
+        `[JOURNEY CRON] ✅ Step ${step.step_number} enviado para ${toEmail} (pedido ${numeroPedido})`
       );
     } else {
       stats.errors++;

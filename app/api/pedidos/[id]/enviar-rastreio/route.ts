@@ -37,9 +37,9 @@ export async function POST(
         return NextResponse.json({ error: 'Pedido não encontrado.' }, { status: 404 });
       }
 
-      let baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://rastreio-io.vercel.app').trim().replace(/\/+$/, '').replace(/\/rastreio$/, '');
+      let baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://seurastreioo.vercel.app').trim().replace(/\/+$/, '').replace(/\/rastreio$/, '');
       if (!baseUrl || baseUrl.includes('localhost') || baseUrl.includes('ri7o2sjad')) {
-        baseUrl = 'https://rastreio-io.vercel.app';
+        baseUrl = 'https://seurastreioo.vercel.app';
       }
       const trackingUrl = `${baseUrl}/rastreio/${mock.codigoRastreio}`;
 
@@ -103,9 +103,9 @@ export async function POST(
       return NextResponse.json({ error: 'Pedido sem código de rastreio cadastrado.' }, { status: 422 });
     }
 
-    let baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://rastreio-io.vercel.app').trim().replace(/\/+$/, '').replace(/\/rastreio$/, '');
+    let baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://seurastreioo.vercel.app').trim().replace(/\/+$/, '').replace(/\/rastreio$/, '');
     if (!baseUrl || baseUrl.includes('localhost') || baseUrl.includes('ri7o2sjad')) {
-      baseUrl = 'https://rastreio-io.vercel.app';
+      baseUrl = 'https://seurastreioo.vercel.app';
     }
     const trackingUrl = `${baseUrl}/rastreio/${tracking.codigo_rastreio}`;
 
